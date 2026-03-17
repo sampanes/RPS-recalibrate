@@ -148,6 +148,9 @@ const ScoreBoard: React.FC<{
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  // ── Debug ───────────────────────────────────────────────────────────────────
+  const isDebug = new URLSearchParams(window.location.search).has("debug");
+
   // ── State ───────────────────────────────────────────────────────────────────
   const [phase, setPhase]               = useState<Phase>("idle");
   const [countdownIdx, setCountdownIdx] = useState(0);
@@ -165,6 +168,19 @@ export default function App() {
   const [arenaHovered, setArenaHovered]     = useState(false);
   const [displayStep, setDisplayStep]       = useState<string>("");
   const [lastTouchMove, setLastTouchMove]   = useState<Move | null>(null);
+
+  // ── Debug State ─────────────────────────────────────────────────────────────
+  const [debugLog, setDebugLog] = useState<{
+    botStrategy: "random" | "adaptive";
+    shootTime: number | null;
+    inputTime: number | null;
+    latency: number | null;
+  }>({
+    botStrategy: "random",
+    shootTime: null,
+    inputTime: null,
+    latency: null,
+  });
 
   // ── Haptic feedback helper ───────────────────────────────────────────────
   const haptic = useCallback((pattern: number | number[]) => {
@@ -244,8 +260,20 @@ export default function App() {
     earlyMoveRef.current = null;
 
     // Computer decides RIGHT NOW based on accumulated history
+    const strategy = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random";
     const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
     const result   = determineOutcome(move, compMove);
+
+    if (isDebug) {
+      const inputTime = Date.now();
+      const shootTime = debugLog.shootTime;
+      setDebugLog(prev => ({
+        ...prev,
+        botStrategy: strategy,
+        inputTime,
+        latency: shootTime ? inputTime - shootTime : null,
+      }));
+    }
 
     setPlayerMove(move);
     setComputerMove(compMove);
@@ -338,6 +366,10 @@ export default function App() {
       setDisplayStep("SHOOT!");
       playShootSound();
       haptic(25);
+
+      if (isDebug) {
+        setDebugLog(prev => ({ ...prev, shootTime: Date.now(), inputTime: null, latency: null }));
+      }
 
       // If player pressed early during "3", process it now
       if (earlyMoveRef.current) {
@@ -826,6 +858,29 @@ export default function App() {
         ))}
         &nbsp;|&nbsp;numpad works too
       </div>
+
+      {/* ── Debug Overlay ── */}
+      {isDebug && (
+        <div 
+          className="fixed bottom-0 right-0 p-3 m-2 rounded-md bg-black/80 text-white text-[10px] font-mono z-[100] backdrop-blur-sm pointer-events-none"
+          style={{ border: "1px solid rgba(255,255,255,0.2)" }}
+        >
+          <div className="font-bold text-yellow-400 mb-1">DEBUG MODE</div>
+          <div>Phase: {phase}</div>
+          <div>Games: {totalGames}</div>
+          <div className={debugLog.botStrategy === 'adaptive' ? 'text-red-400' : 'text-green-400'}>
+            Bot: {debugLog.botStrategy.toUpperCase()} 
+            {debugLog.botStrategy === 'adaptive' && ` (noise: ${CONFIG.ADAPTIVE_NOISE})`}
+          </div>
+          <hr className="my-1 border-white/20" />
+          <div>Latency: {debugLog.latency !== null ? `${debugLog.latency}ms` : "---"}</div>
+          <div>Early Window: {CONFIG.INPUT_EARLY_WINDOW_MS}ms</div>
+          <div>Shoot Window: {CONFIG.SHOOT_WINDOW_MS}ms</div>
+          <div>Late Grace: {CONFIG.INPUT_LATE_GRACE_MS}ms</div>
+          <hr className="my-1 border-white/20" />
+          <div>Player Hist: R:{playerHistory.rock} P:{playerHistory.paper} S:{playerHistory.scissors}</div>
+        </div>
+      )}
 
       {/* ── Keyframe animations + arena cursor hiding ── */}
       <style>{`
