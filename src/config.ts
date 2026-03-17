@@ -59,6 +59,69 @@ export const CONFIG = {
   /** Probability (0–1) that the adaptive AI ignores history and goes random */
   ADAPTIVE_NOISE: 0.2,
 
+  // ── Experiment: Calibration Engine ────────────────────────────────────────
+  /**
+   * Master toggle. When true, the game runs the PSS-recalibration protocol
+   * (Stetson et al. 2006) instead of the standard game loop.
+   * Flip to `true` to activate the experiment.
+   */
+  EXPERIMENT_MODE: false,
+
+  /**
+   * Fixed injected delay (ms) between player input and sensory feedback
+   * (beep + bot move display) during the calibration phase.
+   * Paper target: 135 ms.
+   */
+  CALIB_DELAY_MS: 135,
+
+  /**
+   * Number of consecutive trials at CALIB_DELAY_MS before the player is
+   * considered "fully adapted" and the illusion phase can begin.
+   * Research shows full recalibration magnitude within ~20 trials.
+   */
+  CALIB_TRIAL_COUNT: 20,
+
+  /**
+   * Fraction (0–1) of calibration trials that receive a variable ("organic")
+   * delay instead of the fixed CALIB_DELAY_MS, to prevent conscious detection
+   * of the fixed lag.
+   */
+  CALIB_NOISE_RATIO: 0.4,
+
+  /**
+   * Center of the Gaussian distribution used for variable noise-trial delays (ms).
+   * Actual delay sampled from N(CALIB_NOISE_CENTER_MS, CALIB_NOISE_SIGMA_MS²).
+   */
+  CALIB_NOISE_CENTER_MS: 60,
+
+  /**
+   * Standard deviation for the noise-trial Gaussian distribution (ms).
+   */
+  CALIB_NOISE_SIGMA_MS: 15,
+
+  // ── Experiment: Illusion Engine ────────────────────────────────────────────
+  /**
+   * Reduced delay (ms) for the "impossible window" illusion phase.
+   * At 35 ms the bot move appears to precede the player's completed action
+   * because the brain is adapted to the 135 ms CALIB_DELAY_MS baseline.
+   */
+  ILLUSION_DELAY_MS: 35,
+
+  /**
+   * During illusion mode, the player's OWN move display retains the
+   * calibration delay. This creates a ~100 ms temporal gap where the bot
+   * move is visible before the player's own choice appears on screen.
+   */
+  ILLUSION_PLAYER_MOVE_DELAY_MS: 135,
+
+  /**
+   * Expected PSS shift (ms) used to gate the transition from calibration
+   * to illusion mode. Based on the Stetson et al. 2006 average of 44 ms.
+   * (Currently informational — the transition is trial-count gated by
+   * CALIB_TRIAL_COUNT until adaptive PSS tracking is implemented.)
+   */
+  ILLUSION_PSS_SHIFT_MS: 44,
+
   // ── Animated background ────────────────────────────────────────────────────
   /** How many floating brushstroke blobs to keep alive at once */
   BG_BLOB_COUNT: 7,
