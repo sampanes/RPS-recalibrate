@@ -16,86 +16,32 @@ naturally provides the ~5 ms "thinking buffer" the paper requires before the
 
 ---
 
-## Step 1 — Split the reveal into two independent display events
+## Step 1 — Gaussian Noise Sampler & Config Update
 
-**File:** `src/App.tsx`
+**File:** `src/utils/experimentUtils.ts` (new file) & `src/config.ts`
 
-**Why:** Currently `revealVisible` shows both player and bot moves at the same
-time after `REVEAL_DELAY_MS`. The illusion requires the bot move to appear
-at `ILLUSION_DELAY_MS` (35 ms) and the player's own move to appear at
-`ILLUSION_PLAYER_MOVE_DELAY_MS` (135 ms), creating a ~100 ms temporal gap.
+**Why:** We need a robust way to generate the "organic" jitter for calibration trials to prevent conscious detection of the 135ms lag.
 
-**Changes:**
-
-1. Add two new state variables:
-   ```ts
-   const [botMoveVisible,    setBotMoveVisible]    = useState(false);
-   const [playerMoveVisible, setPlayerMoveVisible] = useState(false);
-   ```
-
-2. In `handlePlayerMove`, replace the single `schedule(..., REVEAL_DELAY_MS)`
-   block with:
-   ```
-   Normal mode (EXPERIMENT_MODE = false):
-     schedule(() => { setBotMoveVisible(true); setPlayerMoveVisible(true); setRevealVisible(true); ... }, REVEAL_DELAY_MS)
-
-   Calibration mode (calibTrials < CALIB_TRIAL_COUNT):
-     delay = isNoiseTrial ? sampleGaussian() : CONFIG.CALIB_DELAY_MS
-     schedule(() => { setBotMoveVisible(true); setPlayerMoveVisible(true); setRevealVisible(true); ... }, delay)
-
-   Illusion mode (calibTrials >= CALIB_TRIAL_COUNT):
-     schedule(() => { setBotMoveVisible(true);  playBeep(); },       CONFIG.ILLUSION_DELAY_MS)
-     schedule(() => { setPlayerMoveVisible(true); setRevealVisible(true); }, CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS)
-   ```
-
-3. Update the JSX reveal section to gate each half on its own flag:
-   ```tsx
-   {botMoveVisible && <BotMoveDisplay move={computerMove} />}
-   {playerMoveVisible && <PlayerMoveDisplay move={playerMove} />}
-   ```
-
-4. Clear both flags when returning to idle.
-
----
-
-## Step 2 — Add experiment mode state machine
-
-**File:** `src/App.tsx`
-
-**New state:**
+**1. Update `src/config.ts`:**
+Add these missing parameters for better flexibility:
 ```ts
-type ExperimentPhase = "calibration" | "illusion";
-const [experimentPhase, setExperimentPhase] = useState<ExperimentPhase>("calibration");
-const [calibTrials, setCalibTrials]         = useState(0);   // consecutive adapted trials
+  /** Quartile for RT-gated illusion trigger (0.25 = fastest 25%) */
+  ILLUSION_RT_THRESHOLD: 0.25,
+  /** Minimum trials recorded before RT-gating activates */
+  ILLUSION_MIN_RT_HISTORY: 8,
+  /** Whether to reset calibration if the player misses a 'SHOOT!' window */
+  RESET_CALIB_ON_MISS: true,
 ```
 
-**Transition logic** (fire at end of each round in experiment mode):
-```ts
-if (CONFIG.EXPERIMENT_MODE && experimentPhase === "calibration") {
-  const next = calibTrials + 1;
-  setCalibTrials(next);
-  if (next >= CONFIG.CALIB_TRIAL_COUNT) {
-    setExperimentPhase("illusion");
-  }
-}
-```
-
-Add a `calibTrialsRef` (like other refs in the file) to avoid stale-closure
-reads inside `handlePlayerMove`.
-
----
-
-## Step 3 — Gaussian noise sampler
-
-**File:** `src/utils/experimentUtils.ts` (new file)
-
+**2. Create `src/utils/experimentUtils.ts`:**
 ```ts
 import { CONFIG } from "../config";
 
 /** Box-Muller transform → N(0,1) sample */
 function gaussianSample(): number {
-  const u = 1 - Math.random();
-  const v = Math.random();
+  let u = 0, v = 0;
+  while(u === 0) u = Math.random(); 
+  while(v === 0) v = Math.random();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
@@ -104,7 +50,7 @@ function gaussianSample(): number {
  * CALIB_NOISE_RATIO % of trials get a Gaussian-distributed "organic" delay
  * centered at CALIB_NOISE_CENTER_MS; the rest get the fixed CALIB_DELAY_MS.
  */
-export function calibrationDelay(): number {
+export function getCalibrationDelay(): number {
   if (Math.random() < CONFIG.CALIB_NOISE_RATIO) {
     const sample = CONFIG.CALIB_NOISE_CENTER_MS
                  + gaussianSample() * CONFIG.CALIB_NOISE_SIGMA_MS;
@@ -114,104 +60,187 @@ export function calibrationDelay(): number {
 }
 ```
 
-Import and call this in the Step 1 scheduling logic.
-
 ---
 
-## Step 4 — Reaction-time tracker (for ACC trigger logic)
+## Step 2 — Experiment State Machine & RT Tracking
 
 **File:** `src/App.tsx`
 
-The paper suggests triggering the illusion specifically on rounds where the
-player's "confidence" (fastest reaction times) is highest. This requires
-tracking per-round reaction times.
+**Why:** We need to track the experiment phase and player performance (RT) to decide when to fire the illusion.
 
-**New state/refs:**
+**1. New state & refs:**
 ```ts
-const inputTimestampRef = useRef<number>(0);     // set on SHOOT
-const reactionTimesRef  = useRef<number[]>([]);  // rolling window
+type ExperimentPhase = "calibration" | "illusion";
+const [experimentPhase, setExperimentPhase] = useState<ExperimentPhase>("calibration");
+const [calibTrials, setCalibTrials]         = useState(0); 
+
+// Refs for use in timeout closures (critical!)
+const experimentPhaseRef = useRef<ExperimentPhase>("calibration");
+const calibTrialsRef     = useRef(0);
+const inputTimestampRef  = useRef<number>(0);
+const reactionTimesRef   = useRef<number[]>([]);
+
+// Keep refs in sync
+experimentPhaseRef.current = experimentPhase;
+calibTrialsRef.current     = calibTrials;
 ```
 
-**On SHOOT:** `inputTimestampRef.current = performance.now();`
-
-**On input received:**
-```ts
-const rt = performance.now() - inputTimestampRef.current;
-reactionTimesRef.current = [...reactionTimesRef.current.slice(-9), rt]; // keep last 10
-```
-
-**ACC trigger:** In illusion mode, only deploy the asymmetric timing when
-the current RT is in the fastest quartile of the player's recorded RTs:
-```ts
-const rts = reactionTimesRef.current;
-const p25 = rts.sort((a,b) => a-b)[Math.floor(rts.length * 0.25)];
-const useIllusion = experimentPhase === "illusion" && rt <= p25;
-```
+**2. Reaction Time Capture:**
+- **On `SHOOT!` fires:** `inputTimestampRef.current = performance.now();`
+- **On input received (in `handlePlayerMove`):**
+  ```ts
+  const rt = performance.now() - inputTimestampRef.current;
+  reactionTimesRef.current = [...reactionTimesRef.current.slice(-19), rt]; // Keep last 20
+  ```
 
 ---
 
-## Step 5 — Beep on bot-move display (sensory trigger)
+## Step 3 — Split Reveal & Dynamic Scheduling
 
-**File:** `src/utils/sounds.ts` and `src/App.tsx`
+**File:** `src/App.tsx`
 
-The paper uses a high-frequency auditory trigger coincident with the sensory
-feedback event (the moment the bot's move appears). The current sound system
-plays the outcome sound 300 ms _after_ the reveal.
+**Why:** The core "trick" depends on independent timing for the bot and player displays.
 
-Add a new short beep:
+**1. Add independent visibility flags:**
 ```ts
-export function playFeedbackBeep(ctx: AudioContext): void {
-  // ~120 Hz tone, 80 ms, to mark the motor-sensory binding moment
-  const osc = ctx.createOscillator();
-  osc.frequency.value = 1200; // high-frequency per paper recommendation
-  osc.connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + 0.08);
+const [botMoveVisible, setBotMoveVisible]       = useState(false);
+const [playerMoveVisible, setPlayerMoveVisible] = useState(false);
+```
+
+**2. Refactor `handlePlayerMove` reveal logic:**
+Replace the standard `schedule(..., REVEAL_DELAY_MS)` with a conditional block:
+
+```ts
+if (!CONFIG.EXPERIMENT_MODE) {
+  // Standard Game Logic
+  schedule(() => {
+    setBotMoveVisible(true);
+    setPlayerMoveVisible(true);
+    setRevealVisible(true);
+    setPhase("reveal");
+    playResultWithDelay(result, CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
+  }, CONFIG.REVEAL_DELAY_MS);
+} else {
+  // Experiment Logic
+  const isIllusion = experimentPhaseRef.current === "illusion";
+  
+  // Calculate if this specific trial should use asymmetric timing (RT gating)
+  const rts = [...reactionTimesRef.current].sort((a, b) => a - b);
+  const p25 = rts[Math.floor(rts.length * CONFIG.ILLUSION_RT_THRESHOLD)] || Infinity;
+  const useAsymmetricTiming = isIllusion && (rt <= p25 || rts.length < CONFIG.ILLUSION_MIN_RT_HISTORY);
+
+  const botDelay    = useAsymmetricTiming ? CONFIG.ILLUSION_DELAY_MS : getCalibrationDelay();
+  const playerDelay = useAsymmetricTiming ? CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS : botDelay;
+
+  // Schedule Bot Reveal + Feedback Beep
+  schedule(() => {
+    setBotMoveVisible(true);
+    playFeedbackBeep(); // Step 4
+  }, botDelay);
+
+  // Schedule Player Reveal + UI Reveal Phase
+  schedule(() => {
+    setPlayerMoveVisible(true);
+    setRevealVisible(true);
+    setPhase("reveal");
+    playResultWithDelay(result, CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
+  }, playerDelay);
 }
 ```
 
-Fire `playFeedbackBeep()` at the same time `setBotMoveVisible(true)` is
-called in the illusion/calibration schedule.
-
 ---
 
-## Step 6 — UI indicators (optional, for experiment logging)
+## Step 4 — Auditory Feedback Trigger
 
-Consider adding a small, unobtrusive indicator visible only in
-`EXPERIMENT_MODE`:
+**File:** `src/utils/sounds.ts`
 
-- Current phase: `CALIBRATION (n/20)` or `ILLUSION`
-- Optional: log each trial's `{ trialNum, delay, phase, outcome, rt }` to
-  `console.table()` or a `window.__experimentLog` array for post-session
-  export via `JSON.stringify(window.__experimentLog)`.
+**Why:** Motor-sensory binding is strengthened by a high-frequency beep coincident with the sensory event (bot move).
 
----
+```ts
+/** High-frequency beep (1200Hz) to mark the feedback event */
+export function playFeedbackBeep(): void {
+  const ctx = getCtx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
 
-## Dependency order
+  osc.frequency.setValueAtTime(1200, ctx.currentTime);
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
 
-```
-Step 3 (sampler util)  ← no deps
-Step 2 (state machine) ← no deps
-Step 4 (RT tracker)    ← no deps
-Step 1 (split reveal)  ← needs Step 3
-Step 5 (beep)          ← needs Step 1
-Step 6 (logging)       ← needs Steps 2, 4
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.1);
+}
 ```
 
-Steps 2, 3, 4 can be done in parallel. Step 1 is the riskiest change
-(touches the core reveal path) and should be done carefully with the normal
-mode path regression-tested first.
+---
+
+## Step 5 — Phase Transitions & "Too Slow" Handling
+
+**File:** `src/App.tsx`
+
+**1. Increment Calibration (at end of successful round):**
+```ts
+if (CONFIG.EXPERIMENT_MODE && experimentPhase === "calibration") {
+  setCalibTrials(prev => {
+    const next = prev + 1;
+    if (next >= CONFIG.CALIB_TRIAL_COUNT) setExperimentPhase("illusion");
+    return next;
+  });
+}
+```
+
+**2. Handle Misses:**
+In the "Too slow!" timeout:
+```ts
+if (CONFIG.EXPERIMENT_MODE && CONFIG.RESET_CALIB_ON_MISS) {
+  setCalibTrials(0);
+  setExperimentPhase("calibration");
+}
+```
 
 ---
 
-## Regression test checklist (after each step)
+## Step 6 — Debug Overlay & Data Logging
 
-- [ ] Normal mode (`EXPERIMENT_MODE: false`): game plays identically to today
-- [ ] Calibration phase: result appears at ~135 ms; ~40% of trials feel slightly faster
-- [ ] Illusion phase: bot move visible before player move; gap is perceptible
-- [ ] Too-slow path still works in all phases
-- [ ] Auto-restart still chains correctly
-- [ ] Mobile touch still works
+**File:** `src/App.tsx` (JSX)
+
+**Why:** Essential for verifying the experiment is running as intended.
+
+**1. Add a subtle debug indicator (bottom left):**
+```tsx
+{CONFIG.EXPERIMENT_MODE && (
+  <div className="fixed bottom-2 left-2 text-[10px] font-mono opacity-30 pointer-events-none uppercase">
+    {experimentPhase} | Trials: {calibTrials} | RT: {lastRT}ms
+  </div>
+)}
+```
+
+**2. Console Logging:**
+In `handlePlayerMove`, log the parameters for every trial:
+`console.table({ phase, botDelay, playerDelay, rt, result });`
+
+---
+
+## Dependency Order
+
+1. **Step 1 & 4** (Utils): Pure additions, no dependencies.
+2. **Step 2** (State): Defines the variables used in later steps.
+3. **Step 3** (The "Trick"): Core logic implementation.
+4. **Step 5** (Transitions): Hooks the logic into the game lifecycle.
+5. **Step 6** (Logging): Final verification layer.
+
+---
+
+## Regression Test Checklist
+
+- [ ] **Standard Mode:** Set `EXPERIMENT_MODE: false`. Game should feel exactly as before.
+- [ ] **Calibration Phase:** Result appears at ~135ms. No perceptible gap between bot and player moves.
+- [ ] **Illusion Phase (Slow RT):** If you take your time, it should still feel like Calibration (135ms).
+- [ ] **Illusion Phase (Fast RT):** Bot move should appear noticeably earlier than player move.
+- [ ] **Miss Handling:** Missing a "SHOOT!" should reset the `calibTrials` counter (if configured).
+- [ ] **Mobile:** Verify touch input still triggers the split reveal correctly.
 
 ---
 

@@ -122,6 +122,25 @@ export const CONFIG = {
    */
   ILLUSION_PSS_SHIFT_MS: 44,
 
+  /**
+   * Quartile for RT-gated illusion trigger (0.25 = fastest 25%).
+   * Research shows the illusion is strongest when the player is in a
+   * high-confidence (fastest RT) state.
+   */
+  ILLUSION_RT_THRESHOLD: 0.25,
+
+  /**
+   * Minimum trials recorded before RT-gating activates.
+   * Prevents premature triggers based on a single lucky fast round.
+   */
+  ILLUSION_MIN_RT_HISTORY: 8,
+
+  /**
+   * Whether to reset calibration trials if the participant misses a "SHOOT!" window.
+   * Recalibration is most effective when the sensory feedback loop is unbroken.
+   */
+  RESET_CALIB_ON_MISS: true,
+
   // ── Animated background ────────────────────────────────────────────────────
   /** How many floating brushstroke blobs to keep alive at once */
   BG_BLOB_COUNT: 7,
