@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/* Smooth rendering for the watercolor aesthetic */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Prevent text highlight on rapid key presses */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Custom scrollbar for a refined feel */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f0ebe3;
+}
+::-webkit-scrollbar-thumb {
+  background: #c0a888;
+  border-radius: 3px;
+}
