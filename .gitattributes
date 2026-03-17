@@ -1,0 +1,13 @@
+# Handle line endings automatically for files detected as text
+# and perform CRLF to LF conversion on commit.
+* text=auto
+
+# Ensure specific web files always use LF in the repo
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
