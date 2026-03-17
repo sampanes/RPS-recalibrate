@@ -164,6 +164,14 @@ export default function App() {
   const [missedShot, setMissedShot]         = useState(false);
   const [arenaHovered, setArenaHovered]     = useState(false);
   const [displayStep, setDisplayStep]       = useState<string>("");
+  const [lastTouchMove, setLastTouchMove]   = useState<Move | null>(null);
+
+  // ── Haptic feedback helper ───────────────────────────────────────────────
+  const haptic = useCallback((pattern: number | number[]) => {
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      navigator.vibrate(pattern);
+    }
+  }, []);
 
   // ── Refs ────────────────────────────────────────────────────────────────────
   // Refs mirror state for use inside timeout closures (avoids stale captures)
@@ -216,14 +224,20 @@ export default function App() {
   const handlePlayerMove = useCallback((move: Move) => {
     const p = phaseRef.current;
 
+    setLastTouchMove(move);
+    setTimeout(() => setLastTouchMove(null), 400);
+
     // During early countdown phase, stash the move for processing at SHOOT
     if (p === "countdown") {
       earlyMoveRef.current = move;
+      haptic(12);
       return;
     }
 
     // Only accept during "accepting" phase
     if (p !== "accepting") return;
+
+    haptic(18);
 
     // Lock immediately — no more input this round
     setPhase("locked");
@@ -254,6 +268,10 @@ export default function App() {
       setRevealVisible(true);
       setPhase("reveal");
       playResultWithDelay(result, CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
+      // Extra haptic for victory!
+      if (result === "win") schedule(() => haptic([25, 45, 35]), CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
+      else if (result === "lose") schedule(() => haptic(40), CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
+      else schedule(() => haptic([15, 15]), CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
     }, CONFIG.REVEAL_DELAY_MS);
 
     // Auto-return to idle / auto-restart
@@ -262,7 +280,7 @@ export default function App() {
       setPhase("idle");
       queueAutoRestart();
     }, CONFIG.REVEAL_DELAY_MS + CONFIG.REVEAL_DURATION_MS);
-  }, [schedule, queueAutoRestart]);
+  }, [schedule, queueAutoRestart, haptic]);
 
   // Keep ref updated
   handlePlayerMoveRef.current = handlePlayerMove;
@@ -289,12 +307,14 @@ export default function App() {
 
     // Step "1" — immediate tick
     playCountdownTick();
+    haptic(8);
 
     // Step "2"
     schedule(() => {
       setCountdownIdx(1);
       setDisplayStep("2");
       playCountdownTick();
+      haptic(8);
     }, step);
 
     // Step "3"
@@ -302,6 +322,7 @@ export default function App() {
       setCountdownIdx(2);
       setDisplayStep("3");
       playCountdownTick();
+      haptic(10);
     }, step * 2);
 
     // Early input window opens during "3" step (earlyMs before SHOOT)
@@ -316,6 +337,7 @@ export default function App() {
       setCountdownIdx(3);
       setDisplayStep("SHOOT!");
       playShootSound();
+      haptic(25);
 
       // If player pressed early during "3", process it now
       if (earlyMoveRef.current) {
@@ -401,7 +423,7 @@ export default function App() {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div
-      className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden select-none"
+      className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden select-none px-4"
       style={{
         background: "linear-gradient(135deg, #f6f1eb 0%, #ede7df 45%, #e8e0d6 100%)",
         fontFamily: "'IM Fell English', serif",
@@ -411,9 +433,9 @@ export default function App() {
       <WatercolorCanvas />
 
       {/* ── Title ── */}
-      <header className="relative z-10 text-center mb-5" style={{ zIndex: 10 }}>
+      <header className="relative z-10 text-center mb-4 md:mb-5" style={{ zIndex: 10 }}>
         <h1
-          className="text-5xl md:text-6xl font-bold"
+          className="text-4xl sm:text-5xl md:text-6xl font-bold"
           style={{
             fontFamily: "'Caveat', cursive",
             color: "#241810",
@@ -423,16 +445,16 @@ export default function App() {
         >
           Rock · Paper · Scissors
         </h1>
-        <p className="mt-1 text-base italic" style={{ color: "#6a5a4a" }}>
+        <p className="mt-1 text-sm md:text-base italic" style={{ color: "#6a5a4a" }}>
           ink &amp; wash edition
         </p>
         {adaptiveActive && (
-          <p className="mt-1 text-sm italic" style={{ color: "#8a3a2a", opacity: 0.8 }}>
+          <p className="mt-1 text-xs md:text-sm italic" style={{ color: "#8a3a2a", opacity: 0.8 }}>
             ⚠ The ink has learned your patterns…
           </p>
         )}
         {!adaptiveActive && adaptiveCountdown > 0 && totalGames > 0 && (
-          <p className="mt-1 text-xs italic" style={{ color: "#9a8a7a", opacity: 0.7 }}>
+          <p className="mt-1 text-[10px] md:text-xs italic" style={{ color: "#9a8a7a", opacity: 0.7 }}>
             ({adaptiveCountdown} more until the ink adapts)
           </p>
         )}
@@ -479,7 +501,7 @@ export default function App() {
         <InkBorder outcome={outcome} active={arenaHovered} />
 
         <div
-          className="relative flex flex-col items-center justify-center p-8"
+          className="relative flex flex-col items-center justify-center p-6 md:p-8"
           style={{ minHeight: 340, zIndex: 2 }}
         >
           {/* ── IDLE: Start prompt (only when cursor outside arena) ── */}
@@ -617,7 +639,7 @@ export default function App() {
                     {/* Player */}
                     <div className="flex flex-col items-center gap-1">
                       <div
-                        className="text-7xl"
+                        className="text-6xl md:text-7xl"
                         style={{
                           filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
                           animation: "inkPop 0.3s ease-out",
@@ -644,7 +666,7 @@ export default function App() {
                     {/* Computer */}
                     <div className="flex flex-col items-center gap-1">
                       <div
-                        className="text-7xl"
+                        className="text-6xl md:text-7xl"
                         style={{
                           filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
                           animation: "inkPop 0.3s ease-out 0.1s both",
@@ -691,19 +713,22 @@ export default function App() {
           )}
         </div>
 
-        {/* ── Mobile overlay buttons (translucent, always on arena) ── */}
+        {/* ── Mobile overlay buttons (Fantastic Version) ── */}
         <div
-          className="absolute inset-0 flex md:hidden"
-          style={{
-            zIndex: 20,
-            pointerEvents: (phase === "accepting" || phase === "countdown" || phase === "idle")
-              ? "auto" : "none",
-          }}
+          className="absolute inset-x-0 bottom-0 flex justify-around items-end pb-10 px-4 md:hidden pointer-events-none"
+          style={{ zIndex: 30 }}
         >
           {(["rock", "paper", "scissors"] as Move[]).map((move, i) => {
             const accepting = phase === "accepting";
-            const counting  = phase === "countdown";
-            const idle      = phase === "idle";
+            const isLastPressed = lastTouchMove === move;
+            
+            // Generate a unique organic shape for each button
+            const radii = [
+              "60% 40% 30% 70% / 60% 30% 70% 40%",
+              "40% 60% 70% 30% / 40% 50% 60% 50%",
+              "50% 50% 30% 70% / 50% 60% 40% 60%",
+            ][i];
+
             return (
               <button
                 key={move}
@@ -718,36 +743,63 @@ export default function App() {
                   if (p === "accepting" || p === "countdown") handlePlayerMoveRef.current(move);
                   else if (p === "idle") beginCountdownRef.current();
                 }}
-                className="flex-1 flex flex-col items-center justify-end pb-6 transition-all duration-200 active:scale-95"
+                className={`
+                  relative pointer-events-auto flex flex-col items-center justify-center
+                  w-20 h-20 sm:w-24 sm:h-24 transition-all duration-300
+                  ${isLastPressed ? 'scale-90' : 'scale-100'}
+                  ${accepting ? 'animate-pulse-subtle' : ''}
+                `}
                 style={{
-                  background: accepting
-                    ? "rgba(200,185,165,0.40)"
-                    : "rgba(255,252,248,0.02)",
-                  borderLeft: i > 0 ? "1px solid rgba(100,80,60,0.1)" : "none",
-                  opacity: accepting ? 1 : (counting ? 0.6 : (idle ? 0.35 : 0.15)),
-                  transition: "opacity 0.3s, background 0.3s",
+                  background: accepting ? "rgba(255, 252, 248, 0.92)" : "rgba(255, 252, 248, 0.45)",
+                  border: "1px solid rgba(100, 80, 60, 0.2)",
+                  borderRadius: radii,
+                  boxShadow: accepting 
+                    ? "0 8px 25px rgba(0,0,0,0.12), inset 0 0 15px rgba(100,80,60,0.08)"
+                    : "0 4px 10px rgba(0,0,0,0.06)",
+                  backdropFilter: "blur(6px)",
+                  opacity: (phase === "reveal" || phase === "locked") ? 0 : 1,
+                  visibility: (phase === "reveal" || phase === "locked") ? "hidden" : "visible",
+                  transition: "opacity 0.4s, transform 0.2s, background 0.3s, visibility 0.4s, border-radius 0.5s",
                 }}
               >
+                {/* Ink splash effect on press */}
+                {isLastPressed && (
+                  <div className="absolute inset-0 animate-ping opacity-30" style={{ background: "#8a7a6a", borderRadius: radii }} />
+                )}
+                
                 <span
-                  className="text-5xl"
+                  className="text-4xl sm:text-5xl"
                   style={{
-                    filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.08))",
-                    transition: "transform 0.2s",
-                    transform: accepting ? "scale(1.15)" : "scale(0.85)",
+                    filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.1))",
+                    transform: accepting ? "scale(1.15)" : "scale(1)",
+                    transition: "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
                   }}
                 >
                   {MOVE_EMOJI[move]}
                 </span>
                 <span
-                  className="text-lg mt-2 font-semibold"
+                  className="text-xs mt-1 font-bold uppercase tracking-widest"
                   style={{
                     fontFamily: "'Caveat', cursive",
                     color: accepting ? "#3a2a18" : "#8a7a6a",
-                    transition: "color 0.2s",
+                    fontSize: '0.65rem'
                   }}
                 >
-                  {i + 1} · {MOVE_LABEL[move]}
+                  {MOVE_LABEL[move]}
                 </span>
+
+                {/* Decorative ink ring */}
+                <svg className="absolute inset-0 w-full h-full -rotate-12 pointer-events-none" viewBox="0 0 100 100">
+                  <path
+                    d="M20,50 C20,20 80,20 80,50 C80,80 20,80 20,50"
+                    fill="none"
+                    stroke={accepting ? "#5a4a3a" : "rgba(100,80,60,0.25)"}
+                    strokeWidth="1.5"
+                    strokeDasharray="5 3"
+                    opacity={accepting ? 0.5 : 0.3}
+                    style={{ transition: 'stroke 0.3s' }}
+                  />
+                </svg>
               </button>
             );
           })}
@@ -797,6 +849,13 @@ export default function App() {
         @keyframes breathe {
           0%, 100% { opacity: 0.35; transform: scale(0.95); }
           50%      { opacity: 0.6;  transform: scale(1.05); }
+        }
+        @keyframes pulse-subtle {
+          0%, 100% { transform: scale(1); }
+          50%      { transform: scale(1.04); }
+        }
+        .animate-pulse-subtle {
+          animation: pulse-subtle 1.8s ease-in-out infinite;
         }
       `}</style>
     </div>
