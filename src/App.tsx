@@ -721,6 +721,7 @@ export default function App() {
           {(["rock", "paper", "scissors"] as Move[]).map((move, i) => {
             const accepting = phase === "accepting";
             const isLastPressed = lastTouchMove === move;
+            const isHidden = phase === "idle" || phase === "reveal" || phase === "locked";
             
             // Generate a unique organic shape for each button
             const radii = [
@@ -757,8 +758,8 @@ export default function App() {
                     ? "0 8px 25px rgba(0,0,0,0.12), inset 0 0 15px rgba(100,80,60,0.08)"
                     : "0 4px 10px rgba(0,0,0,0.06)",
                   backdropFilter: "blur(6px)",
-                  opacity: (phase === "reveal" || phase === "locked") ? 0 : 1,
-                  visibility: (phase === "reveal" || phase === "locked") ? "hidden" : "visible",
+                  opacity: isHidden ? 0 : 1,
+                  visibility: isHidden ? "hidden" : "visible",
                   transition: "opacity 0.4s, transform 0.2s, background 0.3s, visibility 0.4s, border-radius 0.5s",
                 }}
               >
