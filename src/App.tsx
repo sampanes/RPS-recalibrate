@@ -284,16 +284,6 @@ export default function App() {
   const handlePlayerMove = useCallback((move: Move) => {
     const p = phaseRef.current;
 
-    setLastTouchMove(move);
-    setTimeout(() => setLastTouchMove(null), 400);
-
-    // During early countdown phase, stash the move for processing at SHOOT
-    if (p === "countdown") {
-      earlyMoveRef.current = move;
-      haptic(12);
-      return;
-    }
-
     // Only accept during "accepting" phase
     if (p !== "accepting") return;
 
@@ -354,19 +344,6 @@ export default function App() {
     }
 
     setComputerMove(compMove);
-    setOutcome(result);
-
-    // Update scoreboard
-    setScores(prev => ({
-      wins:   result === "win"  ? prev.wins + 1   : prev.wins,
-      ties:   result === "tie"  ? prev.ties + 1   : prev.ties,
-      losses: result === "lose" ? prev.losses + 1 : prev.losses,
-    }));
-
-    const nextTotal = totalGamesRef.current + 1;
-    setTotalGames(nextTotal);
-    setPlayerHistory(prev => ({ ...prev, [move]: prev[move] + 1 }));
-    if (nextTotal >= CONFIG.ADAPTIVE_THRESHOLD) setAdaptiveActive(true);
 
     // Schedule Bot Reveal
     if (!isImbalanceReveal) {
@@ -377,14 +354,34 @@ export default function App() {
       setComputerRevealVisible(true);
     }
 
-    // Schedule Player Reveal + UI Reveal Phase
+    // Schedule Player Reveal + ALL sensory consequences (sound, haptic, visuals, scores)
     schedule(() => {
+      // VISUAL CHOICE FEEDBACK
       setPlayerMove(move);
       setPlayerRevealVisible(true);
+      
+      // BUTTON FEEDBACK (Ink splash and scale)
+      setLastTouchMove(move);
+      setTimeout(() => setLastTouchMove(null), 400);
+
+      // ARENA FEEDBACK
       setRevealVisible(true);
       setPhase("reveal");
+      setOutcome(result);
 
-      // Simultaneous sound + haptic
+      // SCOREBOARD FEEDBACK
+      setScores(prev => ({
+        wins:   result === "win"  ? prev.wins + 1   : prev.wins,
+        ties:   result === "tie"  ? prev.ties + 1   : prev.ties,
+        losses: result === "lose" ? prev.losses + 1 : prev.losses,
+      }));
+
+      const nextTotal = totalGamesRef.current + 1;
+      setTotalGames(nextTotal);
+      setPlayerHistory(prev => ({ ...prev, [move]: prev[move] + 1 }));
+      if (nextTotal >= CONFIG.ADAPTIVE_THRESHOLD) setAdaptiveActive(true);
+
+      // AUDIO / HAPTIC FEEDBACK
       playResultWithDelay(result, 0); 
       
       if (result === "win") haptic([25, 45, 35]);
