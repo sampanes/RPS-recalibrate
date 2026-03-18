@@ -57,7 +57,7 @@ export const CONFIG = {
   IMBALANCE_PROBABILITY: 0.3,
 
   /** How many ms BEFORE "SHOOT!" the early decision occurs */
-  IMBALANCE_ADVANCE_MS: 300,
+  IMBALANCE_ADVANCE_MAX_MS: 300,
 
   // ── AI ─────────────────────────────────────────────────────────────────────
   /** Number of completed games before adaptive strategy activates */
@@ -119,7 +119,7 @@ export const CONFIG = {
    * At 35 ms the bot move appears to precede the player's completed action
    * because the brain is adapted to the 135 ms CALIB_DELAY_MS baseline.
    */
-  ILLUSION_DELAY_MS: 35,
+  ILLUSION_DELAY_MS: 0,
 
   /**
    * During illusion mode, the player's OWN move display retains the
