@@ -19,7 +19,7 @@ export const CONFIG = {
    * This means the player can press during the "3" display.
    * e.g. 400 = the last 400ms of the "3" step already accept a throw.
    */
-  INPUT_EARLY_WINDOW_MS: 400,
+  INPUT_EARLY_WINDOW_MS: 0,
 
   /** How long the "SHOOT!" window stays open for player input */
   SHOOT_WINDOW_MS: 1600,

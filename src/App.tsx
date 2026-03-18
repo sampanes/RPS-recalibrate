@@ -260,14 +260,13 @@ export default function App() {
 
     // Lock immediately — no more input this round
     setPhase("locked");
-    earlyMoveRef.current = null;
 
     // Computer move might have been pre-decided in "imbalance"
-    // In "learned" state (threshold reached), the bot always knows what to throw
+    const isImbalanceReveal = computerMoveRef.current !== null;
     const compMove = computerMoveRef.current || computeComputerMove(
       totalGamesRef.current, 
       playerHistoryRef.current,
-      move // Pass current move to enable "winning" behavior once threshold is met
+      move
     );
     const result   = determineOutcome(move, compMove);
     const strategy = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random";
@@ -286,30 +285,52 @@ export default function App() {
     setComputerMove(compMove);
     setOutcome(result);
 
-    // If bot wasn't already revealed, reveal it now (before the player's delay window)
-    setComputerRevealVisible(true);
+    // Update scoreboard
+    setScores(prev => ({
+      wins:   result === "win"  ? prev.wins + 1   : prev.wins,
+      ties:   result === "tie"  ? prev.ties + 1   : prev.ties,
+      losses: result === "lose" ? prev.losses + 1 : prev.losses,
+    }));
 
-    // ... (scoreboard/history updates omitted for brevity, but they remain)
+    const nextTotal = totalGamesRef.current + 1;
+    setTotalGames(nextTotal);
+    setPlayerHistory(prev => ({ ...prev, [move]: prev[move] + 1 }));
+    if (nextTotal >= CONFIG.ADAPTIVE_THRESHOLD) setAdaptiveActive(true);
 
     // THE CORE DELAY REWORK:
-    // Once the ink "learns" (threshold reached), we switch to illusion timings 
-    // if EXPERIMENT_MODE is true. Otherwise, we stick to the calibration delay.
     const isLearned = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD;
     
-    // In "learned" experiment mode, the bot appears earlier (ILLUSION_DELAY_MS)
-    // than the player (ILLUSION_PLAYER_MOVE_DELAY_MS).
-    const botDelay = (CONFIG.EXPERIMENT_MODE && isLearned) 
-      ? CONFIG.ILLUSION_DELAY_MS 
-      : 0; // Bot is revealed immediately above by setComputerRevealVisible(true)
-
+    // Player Delay: 135ms standard
     const playerDelay = (CONFIG.EXPERIMENT_MODE && isLearned)
       ? CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS
       : CONFIG.CALIB_DELAY_MS;
 
-    // We use a small timeout for the bot reveal only if it's not immediate 
-    // (though in current logic, it's revealed immediately above).
-    // If you want even the bot reveal delayed by a few ms, you can schedule it here.
+    // Bot Delay: 
+    // - If it was an imbalance reveal, it's already shown (0 delay).
+    // - Otherwise, in illusion mode it's very fast (35ms).
+    // - In normal mode, we give it a range around 135ms (e.g. 100-180ms) 
+    //   so sometimes it shows before the player, sometimes after.
+    let botDelay = 0;
+    if (!isImbalanceReveal) {
+      if (CONFIG.EXPERIMENT_MODE && isLearned) {
+        botDelay = CONFIG.ILLUSION_DELAY_MS;
+      } else {
+        // Randomize bot delay slightly so it's not always exactly 135ms
+        // This allows the player to sometimes "show first"
+        botDelay = 100 + Math.random() * 80;
+      }
+    }
 
+    // Schedule Bot Reveal
+    if (!isImbalanceReveal) {
+      schedule(() => {
+        setComputerRevealVisible(true);
+      }, botDelay);
+    } else {
+      setComputerRevealVisible(true);
+    }
+
+    // Schedule Player Reveal + UI Reveal Phase
     schedule(() => {
       setPlayerMove(move);
       setPlayerRevealVisible(true);
@@ -407,17 +428,6 @@ export default function App() {
 
       if (isDebug) {
         setDebugLog(prev => ({ ...prev, shootTime: Date.now(), inputTime: null, latency: null }));
-      }
-
-      // If player pressed early during "3", process it now
-      if (earlyMoveRef.current) {
-        const em = earlyMoveRef.current;
-        earlyMoveRef.current = null;
-        // Ensure we're in accepting so handlePlayerMove processes it
-        setPhase("accepting");
-        // Micro-delay for React to flush
-        schedule(() => handlePlayerMoveRef.current(em), 16);
-        return;
       }
 
       // Ensure accepting phase (unless already locked by early input)
@@ -830,12 +840,12 @@ export default function App() {
                 onTouchStart={(e) => {
                   e.preventDefault();
                   const p = phaseRef.current;
-                  if (p === "accepting" || p === "countdown") handlePlayerMoveRef.current(move);
+                  if (p === "accepting") handlePlayerMoveRef.current(move);
                   else if (p === "idle") beginCountdownRef.current();
                 }}
                 onClick={() => {
                   const p = phaseRef.current;
-                  if (p === "accepting" || p === "countdown") handlePlayerMoveRef.current(move);
+                  if (p === "accepting") handlePlayerMoveRef.current(move);
                   else if (p === "idle") beginCountdownRef.current();
                 }}
                 className={`
@@ -845,12 +855,12 @@ export default function App() {
                   ${accepting ? 'animate-pulse-subtle' : ''}
                 `}
                 style={{
-                  background: accepting ? "rgba(255, 252, 248, 0.92)" : "rgba(255, 252, 248, 0.45)",
-                  border: "1px solid rgba(100, 80, 60, 0.2)",
+                  background: accepting ? "rgba(255, 252, 248, 0.92)" : "rgba(255, 252, 248, 0.25)",
+                  border: accepting ? "1px solid rgba(100, 80, 60, 0.2)" : "1px solid rgba(100, 80, 60, 0.1)",
                   borderRadius: radii,
                   boxShadow: accepting 
                     ? "0 8px 25px rgba(0,0,0,0.12), inset 0 0 15px rgba(100,80,60,0.08)"
-                    : "0 4px 10px rgba(0,0,0,0.06)",
+                    : "0 2px 6px rgba(0,0,0,0.04)",
                   backdropFilter: "blur(6px)",
                   opacity: isHidden ? 0 : 1,
                   visibility: isHidden ? "hidden" : "visible",
@@ -865,9 +875,9 @@ export default function App() {
                 <span
                   className="text-4xl sm:text-5xl"
                   style={{
-                    filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.1))",
-                    transform: accepting ? "scale(1.15)" : "scale(1)",
-                    transition: "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+                    filter: accepting ? "drop-shadow(0 2px 4px rgba(0,0,0,0.1))" : "grayscale(100%) opacity(0.5)",
+                    transform: accepting ? "scale(1.15)" : "scale(0.9)",
+                    transition: "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.3s",
                   }}
                 >
                   {MOVE_EMOJI[move]}
@@ -876,7 +886,8 @@ export default function App() {
                   className="text-xs mt-1 font-bold uppercase tracking-widest"
                   style={{
                     fontFamily: "'Caveat', cursive",
-                    color: accepting ? "#3a2a18" : "#8a7a6a",
+                    color: accepting ? "#3a2a18" : "#a09080",
+                    opacity: accepting ? 1 : 0.5,
                     fontSize: '0.65rem'
                   }}
                 >
@@ -888,10 +899,10 @@ export default function App() {
                   <path
                     d="M20,50 C20,20 80,20 80,50 C80,80 20,80 20,50"
                     fill="none"
-                    stroke={accepting ? "#5a4a3a" : "rgba(100,80,60,0.25)"}
+                    stroke={accepting ? "#5a4a3a" : "rgba(100,80,60,0.15)"}
                     strokeWidth="1.5"
                     strokeDasharray="5 3"
-                    opacity={accepting ? 0.5 : 0.3}
+                    opacity={accepting ? 0.5 : 0.2}
                     style={{ transition: 'stroke 0.3s' }}
                   />
                 </svg>
@@ -903,15 +914,19 @@ export default function App() {
 
       {/* ── Desktop key hint (below arena) ── */}
       <div
-        className="relative z-10 mt-5 text-xs italic hidden md:block text-center"
-        style={{ color: "#a09080", zIndex: 10 }}
+        className="relative z-10 mt-5 text-xs italic hidden md:block text-center transition-opacity duration-300"
+        style={{ color: "#a09080", zIndex: 10, opacity: isAccepting ? 1 : 0.4 }}
       >
         keyboard:{" "}
         {(["rock","paper","scissors"] as Move[]).map((m, i) => (
           <span key={m}>
             <kbd
               className="font-mono px-1 rounded mx-0.5"
-              style={{ background: "rgba(180,165,145,0.3)", border: "1px solid rgba(100,80,60,0.18)", borderBottomWidth: 2 }}
+              style={{ 
+                background: isAccepting ? "rgba(180,165,145,0.3)" : "rgba(180,165,145,0.1)", 
+                border: "1px solid rgba(100,80,60,0.18)", 
+                borderBottomWidth: 2 
+              }}
             >
               {i+1}
             </kbd>{" "}{MOVE_LABEL[m]}
