@@ -205,6 +205,7 @@ export default function App() {
   const [arenaHovered, setArenaHovered]     = useState(false);
   const [displayStep, setDisplayStep]       = useState<string>("");
   const [lastTouchMove, setLastTouchMove]   = useState<Move | null>(null);
+  const [visualAccepting, setVisualAccepting] = useState(false);
   const [, setForceUpdate] = useState(0); // For image detection trigger
 
   // ── Asset Detection ────────────────────────────────────────────────────────
@@ -392,6 +393,7 @@ export default function App() {
 
       // ARENA FEEDBACK
       setRevealVisible(true);
+      setVisualAccepting(false);
       setPhase("reveal");
       setOutcome(result);
 
@@ -444,6 +446,7 @@ export default function App() {
     setRevealVisible(false);
     setComputerRevealVisible(false);
     setPlayerRevealVisible(false);
+    setVisualAccepting(false);
     setMissedShot(false);
     setDisplayStep("1");
     earlyMoveRef.current = null;
@@ -486,6 +489,7 @@ export default function App() {
     schedule(() => {
       if (phaseRef.current === "countdown") {
         setPhase("accepting");
+        setVisualAccepting(true);
       }
     }, step * 3 - earlyMs);
 
@@ -503,6 +507,7 @@ export default function App() {
       // Ensure accepting phase (unless already locked by early input)
       if (phaseRef.current !== "locked") {
         setPhase("accepting");
+        setVisualAccepting(true);
       }
 
       // Miss timeout: SHOOT_WINDOW_MS + late grace
@@ -510,6 +515,7 @@ export default function App() {
         if (phaseRef.current === "accepting") {
           setMissedShot(true);
           setPhase("reveal");
+          setVisualAccepting(false);
           setRevealVisible(true);
           setComputerRevealVisible(true);
           setPlayerRevealVisible(true);
@@ -901,7 +907,7 @@ export default function App() {
           style={{ zIndex: 30 }}
         >
           {(["rock", "paper", "scissors"] as Move[]).map((move, i) => {
-            const accepting = phase === "accepting";
+            const accepting = visualAccepting;
             const isLastPressed = lastTouchMove === move;
             const isHidden = phase === "idle" || phase === "reveal";
             
@@ -993,7 +999,7 @@ export default function App() {
       {/* ── Desktop key hint (below arena) ── */}
       <div
         className="relative z-10 mt-5 text-xs italic hidden md:block text-center transition-opacity duration-300"
-        style={{ color: "#a09080", zIndex: 10, opacity: isAccepting ? 1 : 0.4 }}
+        style={{ color: "#a09080", zIndex: 10, opacity: visualAccepting ? 1 : 0.4 }}
       >
         keyboard:{" "}
         {(["rock","paper","scissors"] as Move[]).map((m, i) => (
@@ -1001,7 +1007,7 @@ export default function App() {
             <kbd
               className="font-mono px-1 rounded mx-0.5"
               style={{ 
-                background: isAccepting ? "rgba(180,165,145,0.3)" : "rgba(180,165,145,0.1)", 
+                background: visualAccepting ? "rgba(180,165,145,0.3)" : "rgba(180,165,145,0.1)", 
                 border: "1px solid rgba(100,80,60,0.18)", 
                 borderBottomWidth: 2 
               }}
