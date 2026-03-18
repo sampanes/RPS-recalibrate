@@ -65,25 +65,32 @@ const MOVE_IMAGES: Record<Move, string> = {
   scissors: "/moves/scissors.png",
 };
 
+// Global cache for image availability to prevent per-render 404s
+let _imagesDetected: boolean | null = null;
+
 const MoveIcon: React.FC<{ move: Move; className?: string }> = ({ move, className }) => {
-  const [imgError, setImgError] = useState(false);
-  
-  // If we haven't hit an error, try the image. 
-  // If we hit an error (404), fallback to the emoji.
-  if (!imgError) {
-    return (
-      <img 
-        src={MOVE_IMAGES[move]} 
-        alt={MOVE_LABEL[move]}
-        className={className}
-        onError={() => setImgError(true)}
-        style={{ objectFit: 'contain' }}
-      />
-    );
+  // If we've already detected images are missing, go straight to emoji
+  if (_imagesDetected === false) {
+    return <div className={className}>{MOVE_EMOJI[move]}</div>;
   }
 
-  return <div className={className}>{MOVE_EMOJI[move]}</div>;
+  return (
+    <img 
+      src={MOVE_IMAGES[move]} 
+      alt={MOVE_LABEL[move]}
+      className={className}
+      style={{ objectFit: 'contain' }}
+      // Fallback if this specific image fails
+      onError={(e) => (e.currentTarget.style.display = 'none')}
+    />
+  );
 };
+
+const InkPlaceholder: React.FC = () => (
+  <div className="w-12 h-12 rounded-full border-2 border-dashed border-black/5 flex items-center justify-center">
+    <div className="w-2 h-2 rounded-full bg-black/5 animate-pulse" />
+  </div>
+);
 
 // ─── Ink-border decoration ────────────────────────────────────────────────────
 const InkBorder: React.FC<{ outcome?: "win" | "lose" | "tie" | null; active: boolean }> = ({
@@ -198,6 +205,25 @@ export default function App() {
   const [arenaHovered, setArenaHovered]     = useState(false);
   const [displayStep, setDisplayStep]       = useState<string>("");
   const [lastTouchMove, setLastTouchMove]   = useState<Move | null>(null);
+  const [, setForceUpdate] = useState(0); // For image detection trigger
+
+  // ── Asset Detection ────────────────────────────────────────────────────────
+  useEffect(() => {
+    // Check if rock image exists as a proxy for all images
+    const img = new Image();
+    img.src = MOVE_IMAGES.rock;
+    img.onload = () => {
+      _imagesDetected = true;
+      // Preload the others
+      new Image().src = MOVE_IMAGES.paper;
+      new Image().src = MOVE_IMAGES.scissors;
+      setForceUpdate(v => v + 1);
+    };
+    img.onerror = () => {
+      _imagesDetected = false;
+      setForceUpdate(v => v + 1);
+    };
+  }, []);
 
   // ── Debug Overrides ────────────────────────────────────────────────────────
   const [playerDelayOverride, setPlayerDelayOverride] = useState<number | null>(null);
@@ -772,7 +798,7 @@ export default function App() {
                             {playerRevealVisible && playerMove ? (
                               <MoveIcon move={playerMove} className="w-full h-full" />
                             ) : (
-                              "❓"
+                              <InkPlaceholder />
                             )}
                           </div>
                           <span
@@ -823,7 +849,7 @@ export default function App() {
                             {computerRevealVisible && computerMove ? (
                               <MoveIcon move={computerMove} className="w-full h-full" />
                             ) : (
-                              "❓"
+                              <InkPlaceholder />
                             )}
                           </div>
                           <span
