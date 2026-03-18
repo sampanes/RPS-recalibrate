@@ -337,11 +337,13 @@ export default function App() {
       : ((CONFIG.EXPERIMENT_MODE && isLearned)
         ? CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS
         : CONFIG.CALIB_DELAY_MS);
-
+    
+    const earlyOffset = (Math.pow(Math.random(), 2) * (CONFIG.IMBALANCE_ADVANCE_MAX_MS + 100)) - 300;
+    
     // Bot Delay: 
     // - If it was an imbalance reveal, it's already shown (0 delay).
     // - If there is a manual override, use it.
-    // - Otherwise, in illusion mode it's very fast (35ms).
+    // - Otherwise, in illusion mode it's very fast (0ms).
     // - In normal mode, we give it a range around 135ms (100-180ms) 
     //   so sometimes it shows before the player, sometimes after.
     let botDelay = 0;
@@ -366,14 +368,14 @@ export default function App() {
         inputTime,
         latency: shootTime ? inputTime - shootTime : null,
         playerDelay,
-        botDelay: isImbalanceReveal ? -CONFIG.IMBALANCE_ADVANCE_MS : botDelay,
+        botDelay: isImbalanceReveal ? -earlyOffset : botDelay,
       }));
     }
 
     setComputerMove(compMove);
 
     // Schedule Bot Reveal
-    if (!isImbalanceReveal) {
+    if (!isImbalanceReveal && botDelay > 0) {
       schedule(() => {
         setComputerRevealVisible(true);
       }, botDelay);
@@ -475,7 +477,6 @@ export default function App() {
     }, step * 2);
 
     // "Imbalance": Computer decides before "SHOOT!" with probability from CONFIG
-    const earlyOffset = (Math.pow(Math.random(), 2) * (CONFIG.IMBALANCE_ADVANCE_MAX_MS + 100)) - 300;
     schedule(() => {
       if (Math.random() < CONFIG.IMBALANCE_PROBABILITY) {
         const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
