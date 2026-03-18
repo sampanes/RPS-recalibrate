@@ -79,7 +79,7 @@ export const CONFIG = {
    * (Stetson et al. 2006) instead of the standard game loop.
    * Flip to `true` to activate the experiment.
    */
-  EXPERIMENT_MODE: false,
+  EXPERIMENT_MODE: true,
 
   /**
    * Fixed injected delay (ms) between player input and sensory feedback
