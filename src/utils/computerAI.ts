@@ -78,6 +78,12 @@ function adaptiveMove(history: Record<Move, number>): Move {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+/** Returns the move that beats the given move. */
+export function getWinningMove(playerMove: Move): Move {
+  return BEATS[playerMove];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 /**
  * computeComputerMove
  * ─────────────────────────────────────────────────────────────────────────────
@@ -87,14 +93,22 @@ function adaptiveMove(history: Record<Move, number>): Move {
  * @param totalGamesPlayed  Number of COMPLETED games BEFORE this round.
  * @param playerHistory     Cumulative counts of the player's past moves.
  *                          Does NOT yet include the current round's move.
+ * @param playerCurrentMove (Optional) The player's current move for "cheating" 
+ *                          in experiment/illusion mode.
  * @returns The computer's chosen move for this round.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 export function computeComputerMove(
   totalGamesPlayed: number,
-  playerHistory: Record<Move, number>
+  playerHistory: Record<Move, number>,
+  playerCurrentMove?: Move
 ): Move {
+  // Switch to "winning" behavior if we're over the threshold
   if (totalGamesPlayed >= CONFIG.ADAPTIVE_THRESHOLD) {
+    // If we're in a phase where we should "always" win (and we know the player move)
+    if (playerCurrentMove && Math.random() < CONFIG.ADAPTIVE_WIN_RATE) {
+      return getWinningMove(playerCurrentMove);
+    }
     return adaptiveMove(playerHistory);
   }
   return randomMove();

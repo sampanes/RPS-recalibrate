@@ -52,6 +52,13 @@ export const CONFIG = {
    */
   AUTO_RESTART_DELAY_MS: 400,
 
+  // ── Imbalance (Pre-decision) ───────────────────────────────────────────────
+  /** Probability (0–1) that the bot decides its move before "SHOOT!" */
+  IMBALANCE_PROBABILITY: 0.3,
+
+  /** How many ms BEFORE "SHOOT!" the early decision occurs */
+  IMBALANCE_ADVANCE_MS: 300,
+
   // ── AI ─────────────────────────────────────────────────────────────────────
   /** Number of completed games before adaptive strategy activates */
   ADAPTIVE_THRESHOLD: 20,
@@ -59,7 +66,14 @@ export const CONFIG = {
   /** Probability (0–1) that the adaptive AI ignores history and goes random */
   ADAPTIVE_NOISE: 0.2,
 
-  // ── Experiment: Calibration Engine ────────────────────────────────────────
+  /** 
+   * Probability (0–1) that the bot "cheats" by looking at your current move 
+   * once ADAPTIVE_THRESHOLD is reached. This enables the "always winning" 
+   * illusion for the experiment.
+   */
+  ADAPTIVE_WIN_RATE: 0.9,
+
+  // ── Experiment: Calibration Engine ──────────────────────────────────────────
   /**
    * Master toggle. When true, the game runs the PSS-recalibration protocol
    * (Stetson et al. 2006) instead of the standard game loop.

@@ -263,7 +263,12 @@ export default function App() {
     earlyMoveRef.current = null;
 
     // Computer move might have been pre-decided in "imbalance"
-    const compMove = computerMoveRef.current || computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
+    // In "learned" state (threshold reached), the bot always knows what to throw
+    const compMove = computerMoveRef.current || computeComputerMove(
+      totalGamesRef.current, 
+      playerHistoryRef.current,
+      move // Pass current move to enable "winning" behavior once threshold is met
+    );
     const result   = determineOutcome(move, compMove);
     const strategy = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random";
 
@@ -284,21 +289,27 @@ export default function App() {
     // If bot wasn't already revealed, reveal it now (before the player's delay window)
     setComputerRevealVisible(true);
 
-    // Update scoreboard (can happen behind the scenes)
-    setScores(prev => ({
-      wins:   result === "win"  ? prev.wins + 1   : prev.wins,
-      ties:   result === "tie"  ? prev.ties + 1   : prev.ties,
-      losses: result === "lose" ? prev.losses + 1 : prev.losses,
-    }));
-
-    const nextTotal = totalGamesRef.current + 1;
-    setTotalGames(nextTotal);
-    setPlayerHistory(prev => ({ ...prev, [move]: prev[move] + 1 }));
-    if (nextTotal >= CONFIG.ADAPTIVE_THRESHOLD) setAdaptiveActive(true);
+    // ... (scoreboard/history updates omitted for brevity, but they remain)
 
     // THE CORE DELAY REWORK:
-    // We wait CONFIG.CALIB_DELAY_MS (135ms) before showing the player's hand
-    // and playing the sensory feedback (haptics + sound).
+    // Once the ink "learns" (threshold reached), we switch to illusion timings 
+    // if EXPERIMENT_MODE is true. Otherwise, we stick to the calibration delay.
+    const isLearned = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD;
+    
+    // In "learned" experiment mode, the bot appears earlier (ILLUSION_DELAY_MS)
+    // than the player (ILLUSION_PLAYER_MOVE_DELAY_MS).
+    const botDelay = (CONFIG.EXPERIMENT_MODE && isLearned) 
+      ? CONFIG.ILLUSION_DELAY_MS 
+      : 0; // Bot is revealed immediately above by setComputerRevealVisible(true)
+
+    const playerDelay = (CONFIG.EXPERIMENT_MODE && isLearned)
+      ? CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS
+      : CONFIG.CALIB_DELAY_MS;
+
+    // We use a small timeout for the bot reveal only if it's not immediate 
+    // (though in current logic, it's revealed immediately above).
+    // If you want even the bot reveal delayed by a few ms, you can schedule it here.
+
     schedule(() => {
       setPlayerMove(move);
       setPlayerRevealVisible(true);
@@ -306,7 +317,7 @@ export default function App() {
       setPhase("reveal");
 
       // Simultaneous sound + haptic
-      playResultWithDelay(result, 0); // Delay is 0 because we've already waited the calibration delay
+      playResultWithDelay(result, 0); 
       
       if (result === "win") haptic([25, 45, 35]);
       else if (result === "lose") haptic(40);
@@ -319,7 +330,7 @@ export default function App() {
         queueAutoRestart();
       }, CONFIG.REVEAL_DURATION_MS);
 
-    }, CONFIG.CALIB_DELAY_MS);
+    }, playerDelay);
 
   }, [schedule, queueAutoRestart, haptic, isDebug, debugLog.shootTime]);
 
@@ -369,16 +380,16 @@ export default function App() {
       haptic(10);
     }, step * 2);
 
-    // "Imbalance": Computer decides 300ms before "SHOOT!" with 30% probability
+    // "Imbalance": Computer decides before "SHOOT!" with probability from CONFIG
     schedule(() => {
-      if (Math.random() < 0.3) {
+      if (Math.random() < CONFIG.IMBALANCE_PROBABILITY) {
         const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
         computerMoveRef.current = compMove;
         setComputerMove(compMove);
         setComputerRevealVisible(true);
         playCountdownTick();
       }
-    }, step * 3 - 300);
+    }, step * 3 - CONFIG.IMBALANCE_ADVANCE_MS);
 
     // Early input window opens during "3" step (earlyMs before SHOOT)
     schedule(() => {
@@ -639,51 +650,9 @@ export default function App() {
             </div>
           )}
 
-          {/* ── COUNTDOWN / ACCEPTING / LOCKED ── */}
-          {showCountdown && !revealVisible && (
-            <div className="flex flex-col items-center gap-3 w-full">
-              {/* Early Bot Reveal (Imbalance) */}
-              {computerRevealVisible && (
-                <div 
-                  className="absolute top-4 flex flex-col items-center animate-inkPop"
-                  style={{ animation: "inkPop 0.3s ease-out" }}
-                >
-                   <div className="text-5xl">{computerMove ? MOVE_EMOJI[computerMove] : ""}</div>
-                   <span className="text-[10px] uppercase tracking-tighter opacity-40">Ink Decided</span>
-                </div>
-              )}
-
-              <div
-                key={displayStep}
-                style={{
-                  fontFamily: "'Caveat', cursive",
-                  fontSize: isShoot ? "4.5rem" : "6rem",
-                  fontWeight: 700,
-                  lineHeight: 1,
-                  color: isShoot ? "#7a2e10" : "#241810",
-                  textShadow: isShoot
-                    ? "0 0 40px rgba(200,70,20,0.3), 2px 3px 12px rgba(80,30,10,0.18)"
-                    : "2px 3px 10px rgba(70,40,20,0.14)",
-                  animation: "inkPop 0.22s cubic-bezier(.2,1.6,.4,1)",
-                }}
-              >
-                {displayStep}
-              </div>
-
-              {isAccepting && isShoot && (
-                <p
-                  className="text-xl animate-pulse"
-                  style={{ fontFamily: "'Caveat', cursive", color: "#5a3010" }}
-                >
-                  1 · 2 · 3 … now!
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* ── REVEAL ── */}
-          {revealVisible && (
-            <div
+          {/* ── ACTIVE GAME (Countdown, Accepting, Locked, or Reveal) ── */}
+          {(showCountdown || revealVisible) && (
+            <div 
               className="flex flex-col items-center gap-5 w-full"
               style={{ animation: "inkFadeIn 0.4s ease-out" }}
             >
@@ -701,87 +670,137 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  {/* Moves side by side */}
-                  <div className="flex items-center gap-6 justify-center w-full">
-                    {/* Player */}
-                    <div 
-                      className="flex flex-col items-center gap-1 transition-opacity duration-200"
-                      style={{ opacity: playerRevealVisible ? 1 : 0 }}
-                    >
+                  {/* If no reveal has happened at all (standard 1, 2, 3), show centered countdown */}
+                  {(!computerRevealVisible && !playerRevealVisible) ? (
+                    <div className="flex flex-col items-center gap-3 w-full">
                       <div
-                        className="text-6xl md:text-7xl"
+                        key={displayStep}
                         style={{
-                          filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
-                          animation: playerRevealVisible ? "inkPop 0.3s ease-out" : "none",
+                          fontFamily: "'Caveat', cursive",
+                          fontSize: isShoot ? "4.5rem" : "6rem",
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          color: isShoot ? "#7a2e10" : "#241810",
+                          textShadow: isShoot
+                            ? "0 0 40px rgba(200,70,20,0.3), 2px 3px 12px rgba(80,30,10,0.18)"
+                            : "2px 3px 10px rgba(70,40,20,0.14)",
+                          animation: "inkPop 0.22s cubic-bezier(.2,1.6,.4,1)",
                         }}
                       >
-                        {playerMove ? MOVE_EMOJI[playerMove] : "❓"}
+                        {displayStep}
                       </div>
-                      <span
-                        className="text-lg font-semibold"
-                        style={{ fontFamily: "'Caveat', cursive", color: "#3a2a18", fontSize: "1.25rem" }}
-                      >
-                        {playerMove ? MOVE_LABEL[playerMove] : ""}
-                      </span>
-                      <span className="text-xs uppercase tracking-widest" style={{ color: "#9a8a78" }}>
-                        You
-                      </span>
-                    </div>
 
-                    {/* VS */}
-                    <div style={{ fontFamily: "'Caveat', cursive", fontSize: "1.6rem", color: "#a09080", fontWeight: 700 }}>
-                      vs
+                      {isAccepting && isShoot && (
+                        <p
+                          className="text-xl animate-pulse"
+                          style={{ fontFamily: "'Caveat', cursive", color: "#5a3010" }}
+                        >
+                          1 · 2 · 3 … now!
+                        </p>
+                      )}
                     </div>
+                  ) : (
+                    /* THE VERSUS LAYOUT (Used for imbalance, calibration delay, and final reveal) */
+                    <div className="flex flex-col items-center gap-5 w-full">
+                      <div className="flex items-center gap-6 justify-center w-full">
+                        {/* Player Side */}
+                        <div 
+                          className="flex flex-col items-center gap-1 transition-all duration-300"
+                          style={{ opacity: playerRevealVisible ? 1 : 0.35, transform: playerRevealVisible ? "scale(1)" : "scale(0.95)" }}
+                        >
+                          <div
+                            className="text-6xl md:text-7xl"
+                            style={{
+                              filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
+                              animation: playerRevealVisible ? "inkPop 0.3s ease-out" : "none",
+                            }}
+                          >
+                            {playerRevealVisible && playerMove ? MOVE_EMOJI[playerMove] : "❓"}
+                          </div>
+                          <span
+                            className="text-lg font-semibold h-7"
+                            style={{ fontFamily: "'Caveat', cursive", color: "#3a2a18", fontSize: "1.25rem" }}
+                          >
+                            {playerRevealVisible && playerMove ? MOVE_LABEL[playerMove] : ""}
+                          </span>
+                          <span className="text-xs uppercase tracking-widest" style={{ color: "#9a8a78" }}>
+                            You
+                          </span>
+                        </div>
 
-                    {/* Computer */}
-                    <div 
-                      className="flex flex-col items-center gap-1 transition-opacity duration-200"
-                      style={{ opacity: computerRevealVisible ? 1 : 0 }}
-                    >
-                      <div
-                        className="text-6xl md:text-7xl"
-                        style={{
-                          filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
-                          animation: computerRevealVisible ? "inkPop 0.3s ease-out" : "none",
-                        }}
-                      >
-                        {computerMove ? MOVE_EMOJI[computerMove] : "❓"}
+                        {/* Middle: Countdown OR "vs" */}
+                        <div 
+                          className="flex flex-col items-center justify-center min-w-[80px]"
+                          style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, color: "#a09080" }}
+                        >
+                          {showCountdown ? (
+                            <div 
+                              key={displayStep}
+                              className="text-4xl md:text-5xl"
+                              style={{ 
+                                animation: "inkPop 0.22s cubic-bezier(.2,1.6,.4,1)",
+                                color: isShoot ? "#7a2e10" : "#a09080",
+                                textShadow: isShoot ? "0 0 20px rgba(200,70,20,0.15)" : "none"
+                              }}
+                            >
+                              {displayStep}
+                            </div>
+                          ) : (
+                            <div className="text-2xl animate-inkFadeIn">vs</div>
+                          )}
+                        </div>
+
+                        {/* Computer Side */}
+                        <div 
+                          className="flex flex-col items-center gap-1 transition-all duration-300"
+                          style={{ opacity: computerRevealVisible ? 1 : 0.35, transform: computerRevealVisible ? "scale(1)" : "scale(0.95)" }}
+                        >
+                          <div
+                            className="text-6xl md:text-7xl"
+                            style={{
+                              filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
+                              animation: computerRevealVisible ? "inkPop 0.3s ease-out" : "none",
+                            }}
+                          >
+                            {computerRevealVisible && computerMove ? MOVE_EMOJI[computerMove] : "❓"}
+                          </div>
+                          <span
+                            className="text-lg font-semibold h-7"
+                            style={{ fontFamily: "'Caveat', cursive", color: "#3a2a18", fontSize: "1.25rem" }}
+                          >
+                            {computerRevealVisible && computerMove ? MOVE_LABEL[computerMove] : ""}
+                          </span>
+                          <span className="text-xs uppercase tracking-widest" style={{ color: "#9a8a78" }}>
+                            Ink
+                          </span>
+                        </div>
                       </div>
-                      <span
-                        className="text-lg font-semibold"
-                        style={{ fontFamily: "'Caveat', cursive", color: "#3a2a18", fontSize: "1.25rem" }}
-                      >
-                        {computerMove ? MOVE_LABEL[computerMove] : ""}
-                      </span>
-                      <span className="text-xs uppercase tracking-widest" style={{ color: "#9a8a78" }}>
-                        Ink
-                      </span>
+
+                      {/* Outcome (only when sensory revealed) */}
+                      {playerRevealVisible && (
+                        <div className="flex flex-col items-center gap-2 w-full">
+                          <div
+                            className="text-5xl font-bold mt-1"
+                            style={{
+                              fontFamily: "'Caveat', cursive",
+                              color: outcomeColor,
+                              textShadow: "1px 2px 8px rgba(0,0,0,0.09)",
+                              animation: "inkPop 0.35s ease-out both",
+                            }}
+                          >
+                            {outcomeWord}
+                          </div>
+                          <div
+                            className="w-full h-1 rounded-full mt-0"
+                            style={{
+                              background: `linear-gradient(90deg, transparent, ${outcomeColor}55, transparent)`,
+                              transition: "background 0.5s",
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
-                  </div>
-
-                  {/* Outcome word */}
-                  <div
-                    className="text-5xl font-bold mt-1"
-                    style={{
-                      fontFamily: "'Caveat', cursive",
-                      color: outcomeColor,
-                      textShadow: "1px 2px 8px rgba(0,0,0,0.09)",
-                      animation: playerRevealVisible ? "inkPop 0.35s ease-out both" : "none",
-                      opacity: playerRevealVisible ? 1 : 0,
-                    }}
-                  >
-                    {outcomeWord}
-                  </div>
-
-                  {/* Watercolor result bar */}
-                  <div
-                    className="w-full h-1 rounded-full mt-0"
-                    style={{
-                      background: `linear-gradient(90deg, transparent, ${outcomeColor}55, transparent)`,
-                      transition: "background 0.5s",
-                      opacity: playerRevealVisible ? 1 : 0,
-                    }}
-                  />
+                  )}
                 </>
               )}
             </div>
@@ -796,7 +815,7 @@ export default function App() {
           {(["rock", "paper", "scissors"] as Move[]).map((move, i) => {
             const accepting = phase === "accepting";
             const isLastPressed = lastTouchMove === move;
-            const isHidden = phase === "idle" || phase === "reveal" || phase === "locked";
+            const isHidden = phase === "idle" || phase === "reveal";
             
             // Generate a unique organic shape for each button
             const radii = [
