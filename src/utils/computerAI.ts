@@ -95,15 +95,21 @@ export function getWinningMove(playerMove: Move): Move {
  *                          Does NOT yet include the current round's move.
  * @param playerCurrentMove (Optional) The player's current move for "cheating" 
  *                          in experiment/illusion mode.
+ * @param strategyOverride  (Optional) Force a specific strategy ("random" or "adaptive").
  * @returns The computer's chosen move for this round.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 export function computeComputerMove(
   totalGamesPlayed: number,
   playerHistory: Record<Move, number>,
-  playerCurrentMove?: Move
+  playerCurrentMove?: Move,
+  strategyOverride?: "random" | "adaptive" | null
 ): Move {
-  // Switch to "winning" behavior if we're over the threshold
+  // Use manual override if provided
+  if (strategyOverride === "random") return randomMove();
+  if (strategyOverride === "adaptive") return adaptiveMove(playerHistory);
+
+  // Otherwise, use default logic based on threshold
   if (totalGamesPlayed >= CONFIG.ADAPTIVE_THRESHOLD) {
     // If we're in a phase where we should "always" win (and we know the player move)
     if (playerCurrentMove && Math.random() < CONFIG.ADAPTIVE_WIN_RATE) {

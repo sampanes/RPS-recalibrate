@@ -202,6 +202,7 @@ export default function App() {
   // ── Debug Overrides ────────────────────────────────────────────────────────
   const [playerDelayOverride, setPlayerDelayOverride] = useState<number | null>(null);
   const [botDelayOverride, setBotDelayOverride]       = useState<number | null>(null);
+  const [strategyOverride, setStrategyOverride]       = useState<"random" | "adaptive" | null>(null);
 
   // ── Reveal States ───────────────────────────────────────────────────────────
   const [computerRevealVisible, setComputerRevealVisible] = useState(false);
@@ -304,10 +305,11 @@ export default function App() {
     const compMove = computerMoveRef.current || computeComputerMove(
       totalGamesRef.current, 
       playerHistoryRef.current,
-      move
+      move,
+      strategyOverride
     );
     const result   = determineOutcome(move, compMove);
-    const strategy = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random";
+    const strategy = strategyOverride || (totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random");
 
     // THE CORE DELAY REWORK:
     const isLearned = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD;
@@ -398,7 +400,7 @@ export default function App() {
 
     }, playerDelay);
 
-  }, [schedule, queueAutoRestart, haptic, isDebug, debugLog.shootTime, playerDelayOverride, botDelayOverride]);
+  }, [schedule, queueAutoRestart, haptic, isDebug, debugLog.shootTime, playerDelayOverride, botDelayOverride, strategyOverride]);
 
   // Keep ref updated
   handlePlayerMoveRef.current = handlePlayerMove;
@@ -1029,6 +1031,27 @@ export default function App() {
                 Default
               </button>
             </div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="w-12">Strat:</label>
+              <div className="flex-1 flex gap-1">
+                <button 
+                  onClick={() => {
+                    if (strategyOverride === null) setStrategyOverride("random");
+                    else if (strategyOverride === "random") setStrategyOverride("adaptive");
+                    else setStrategyOverride(null);
+                  }}
+                  className="flex-1 px-1 rounded border border-white/20 bg-transparent hover:bg-white/5"
+                >
+                  Cycle: {strategyOverride === null ? 'Default' : (strategyOverride === 'random' ? 'Random' : 'Adaptive')}
+                </button>
+                <button 
+                  onClick={() => setStrategyOverride(null)}
+                  className={`px-1 rounded border ${strategyOverride === null ? 'bg-purple-600 border-purple-400' : 'bg-transparent border-white/20'}`}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-between items-center gap-3">
@@ -1048,7 +1071,9 @@ export default function App() {
             {debugLog.botDelay !== null && debugLog.botDelay < 0 && (
               <span className="text-orange-400 animate-pulse">IMBALANCE!</span>
             )}
-            <span>Strat: {debugLog.botStrategy}</span>
+            <span className={strategyOverride ? 'text-purple-400 font-bold' : ''}>
+              {debugLog.botStrategy.toUpperCase()}
+            </span>
           </div>
         </div>
       )}
