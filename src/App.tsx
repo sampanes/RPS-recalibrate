@@ -475,6 +475,7 @@ export default function App() {
     }, step * 2);
 
     // "Imbalance": Computer decides before "SHOOT!" with probability from CONFIG
+    const earlyOffset = (Math.pow(Math.random(), 2) * (CONFIG.IMBALANCE_ADVANCE_MAX_MS + 100)) - 300;
     schedule(() => {
       if (Math.random() < CONFIG.IMBALANCE_PROBABILITY) {
         const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
@@ -483,7 +484,7 @@ export default function App() {
         setComputerRevealVisible(true);
         playCountdownTick();
       }
-    }, step * 3 - CONFIG.IMBALANCE_ADVANCE_MS);
+    }, step * 3 - earlyOffset);
 
     // Early input window opens during "3" step (earlyMs before SHOOT)
     schedule(() => {
