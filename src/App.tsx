@@ -775,14 +775,6 @@ export default function App() {
                       >
                         {displayStep}
                       </div>
-
-                      {isAccepting && isShoot && (
-                        <p
-                          className="text-xl animate-pulse"
-                          style={{ fontFamily: "'Caveat', cursive", color: "#5a3010" }}
-                        >
-                          1 · 2 · 3 … now!
-                        </p>
                       )}
                     </div>
                   ) : (
