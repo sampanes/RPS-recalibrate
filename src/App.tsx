@@ -179,11 +179,15 @@ export default function App() {
     shootTime: number | null;
     inputTime: number | null;
     latency: number | null;
+    playerDelay: number | null;
+    botDelay: number | null;
   }>({
     botStrategy: "random",
     shootTime: null,
     inputTime: null,
     latency: null,
+    playerDelay: null,
+    botDelay: null,
   });
 
   // ── Haptic feedback helper ───────────────────────────────────────────────
@@ -271,32 +275,6 @@ export default function App() {
     const result   = determineOutcome(move, compMove);
     const strategy = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random";
 
-    if (isDebug) {
-      const inputTime = Date.now();
-      const shootTime = debugLog.shootTime;
-      setDebugLog(prev => ({
-        ...prev,
-        botStrategy: strategy,
-        inputTime,
-        latency: shootTime ? inputTime - shootTime : null,
-      }));
-    }
-
-    setComputerMove(compMove);
-    setOutcome(result);
-
-    // Update scoreboard
-    setScores(prev => ({
-      wins:   result === "win"  ? prev.wins + 1   : prev.wins,
-      ties:   result === "tie"  ? prev.ties + 1   : prev.ties,
-      losses: result === "lose" ? prev.losses + 1 : prev.losses,
-    }));
-
-    const nextTotal = totalGamesRef.current + 1;
-    setTotalGames(nextTotal);
-    setPlayerHistory(prev => ({ ...prev, [move]: prev[move] + 1 }));
-    if (nextTotal >= CONFIG.ADAPTIVE_THRESHOLD) setAdaptiveActive(true);
-
     // THE CORE DELAY REWORK:
     const isLearned = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD;
     
@@ -317,9 +295,37 @@ export default function App() {
       } else {
         // Randomize bot delay slightly so it's not always exactly 135ms
         // This allows the player to sometimes "show first"
-        botDelay = 100 + Math.random() * 80;
+        botDelay = Math.round(100 + Math.random() * 80);
       }
     }
+
+    if (isDebug) {
+      const inputTime = Date.now();
+      const shootTime = debugLog.shootTime;
+      setDebugLog(prev => ({
+        ...prev,
+        botStrategy: strategy,
+        inputTime,
+        latency: shootTime ? inputTime - shootTime : null,
+        playerDelay,
+        botDelay: isImbalanceReveal ? -CONFIG.IMBALANCE_ADVANCE_MS : botDelay,
+      }));
+    }
+
+    setComputerMove(compMove);
+    setOutcome(result);
+
+    // Update scoreboard
+    setScores(prev => ({
+      wins:   result === "win"  ? prev.wins + 1   : prev.wins,
+      ties:   result === "tie"  ? prev.ties + 1   : prev.ties,
+      losses: result === "lose" ? prev.losses + 1 : prev.losses,
+    }));
+
+    const nextTotal = totalGamesRef.current + 1;
+    setTotalGames(nextTotal);
+    setPlayerHistory(prev => ({ ...prev, [move]: prev[move] + 1 }));
+    if (nextTotal >= CONFIG.ADAPTIVE_THRESHOLD) setAdaptiveActive(true);
 
     // Schedule Bot Reveal
     if (!isImbalanceReveal) {
@@ -939,23 +945,18 @@ export default function App() {
       {/* ── Debug Overlay ── */}
       {isDebug && (
         <div 
-          className="fixed bottom-0 right-0 p-3 m-2 rounded-md bg-black/80 text-white text-[10px] font-mono z-[100] backdrop-blur-sm pointer-events-none"
-          style={{ border: "1px solid rgba(255,255,255,0.2)" }}
+          className="fixed bottom-0 right-0 p-2 m-2 rounded bg-black/80 text-white text-[10px] font-mono z-[100] backdrop-blur-sm pointer-events-none border border-white/20"
         >
-          <div className="font-bold text-yellow-400 mb-1">DEBUG MODE</div>
-          <div>Phase: {phase}</div>
-          <div>Games: {totalGames}</div>
-          <div className={debugLog.botStrategy === 'adaptive' ? 'text-red-400' : 'text-green-400'}>
-            Bot: {debugLog.botStrategy.toUpperCase()} 
-            {debugLog.botStrategy === 'adaptive' && ` (noise: ${CONFIG.ADAPTIVE_NOISE})`}
+          <div className="flex gap-3">
+            <span>P-Delay: {debugLog.playerDelay ?? "---"}ms</span>
+            <span>C-Delay: {debugLog.botDelay ?? "---"}ms</span>
+            <span className="text-yellow-400">
+              Mode: {CONFIG.EXPERIMENT_MODE 
+                ? (totalGames >= CONFIG.ADAPTIVE_THRESHOLD ? "Gaslight" : "Calib") 
+                : "Normal"}
+            </span>
+            <span>RT: {debugLog.latency ?? "---"}ms</span>
           </div>
-          <hr className="my-1 border-white/20" />
-          <div>Latency: {debugLog.latency !== null ? `${debugLog.latency}ms` : "---"}</div>
-          <div>Early Window: {CONFIG.INPUT_EARLY_WINDOW_MS}ms</div>
-          <div>Shoot Window: {CONFIG.SHOOT_WINDOW_MS}ms</div>
-          <div>Late Grace: {CONFIG.INPUT_LATE_GRACE_MS}ms</div>
-          <hr className="my-1 border-white/20" />
-          <div>Player Hist: R:{playerHistory.rock} P:{playerHistory.paper} S:{playerHistory.scissors}</div>
         </div>
       )}
 
