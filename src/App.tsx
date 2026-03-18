@@ -55,6 +55,36 @@ const MOVE_LABEL: Record<Move, string> = {
   scissors: "Scissors",
 };
 
+/**
+ * TODO: Add your custom images to /public/moves/ as rock.png, paper.png, scissors.png
+ * The MoveIcon component will automatically detect them.
+ */
+const MOVE_IMAGES: Record<Move, string> = {
+  rock:     "/moves/rock.png",
+  paper:    "/moves/paper.png",
+  scissors: "/moves/scissors.png",
+};
+
+const MoveIcon: React.FC<{ move: Move; className?: string }> = ({ move, className }) => {
+  const [imgError, setImgError] = useState(false);
+  
+  // If we haven't hit an error, try the image. 
+  // If we hit an error (404), fallback to the emoji.
+  if (!imgError) {
+    return (
+      <img 
+        src={MOVE_IMAGES[move]} 
+        alt={MOVE_LABEL[move]}
+        className={className}
+        onError={() => setImgError(true)}
+        style={{ objectFit: 'contain' }}
+      />
+    );
+  }
+
+  return <div className={className}>{MOVE_EMOJI[move]}</div>;
+};
+
 // ─── Ink-border decoration ────────────────────────────────────────────────────
 const InkBorder: React.FC<{ outcome?: "win" | "lose" | "tie" | null; active: boolean }> = ({
   outcome,
@@ -725,13 +755,17 @@ export default function App() {
                           style={{ opacity: playerRevealVisible ? 1 : 0.35, transform: playerRevealVisible ? "scale(1)" : "scale(0.95)" }}
                         >
                           <div
-                            className="text-6xl md:text-7xl"
+                            className="text-6xl md:text-7xl flex items-center justify-center w-20 h-20 md:w-24 md:h-24"
                             style={{
                               filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
                               animation: playerRevealVisible ? "inkPop 0.3s ease-out" : "none",
                             }}
                           >
-                            {playerRevealVisible && playerMove ? MOVE_EMOJI[playerMove] : "❓"}
+                            {playerRevealVisible && playerMove ? (
+                              <MoveIcon move={playerMove} className="w-full h-full" />
+                            ) : (
+                              "❓"
+                            )}
                           </div>
                           <span
                             className="text-lg font-semibold h-7"
@@ -772,13 +806,17 @@ export default function App() {
                           style={{ opacity: computerRevealVisible ? 1 : 0.35, transform: computerRevealVisible ? "scale(1)" : "scale(0.95)" }}
                         >
                           <div
-                            className="text-6xl md:text-7xl"
+                            className="text-6xl md:text-7xl flex items-center justify-center w-20 h-20 md:w-24 md:h-24"
                             style={{
                               filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
                               animation: computerRevealVisible ? "inkPop 0.3s ease-out" : "none",
                             }}
                           >
-                            {computerRevealVisible && computerMove ? MOVE_EMOJI[computerMove] : "❓"}
+                            {computerRevealVisible && computerMove ? (
+                              <MoveIcon move={computerMove} className="w-full h-full" />
+                            ) : (
+                              "❓"
+                            )}
                           </div>
                           <span
                             className="text-lg font-semibold h-7"
@@ -879,14 +917,14 @@ export default function App() {
                 )}
                 
                 <span
-                  className="text-4xl sm:text-5xl"
+                  className="text-4xl sm:text-5xl flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16"
                   style={{
                     filter: accepting ? "drop-shadow(0 2px 4px rgba(0,0,0,0.1))" : "grayscale(100%) opacity(0.5)",
                     transform: accepting ? "scale(1.15)" : "scale(0.9)",
                     transition: "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.3s",
                   }}
                 >
-                  {MOVE_EMOJI[move]}
+                  <MoveIcon move={move} className="w-full h-full" />
                 </span>
                 <span
                   className="text-xs mt-1 font-bold uppercase tracking-widest"
