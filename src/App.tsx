@@ -169,6 +169,10 @@ export default function App() {
   const [displayStep, setDisplayStep]       = useState<string>("");
   const [lastTouchMove, setLastTouchMove]   = useState<Move | null>(null);
 
+  // ── Reveal States ───────────────────────────────────────────────────────────
+  const [computerRevealVisible, setComputerRevealVisible] = useState(false);
+  const [playerRevealVisible, setPlayerRevealVisible]     = useState(false);
+
   // ── Debug State ─────────────────────────────────────────────────────────────
   const [debugLog, setDebugLog] = useState<{
     botStrategy: "random" | "adaptive";
@@ -195,6 +199,7 @@ export default function App() {
   const arenaHoveredRef  = useRef(false);
   const totalGamesRef    = useRef(0);
   const playerHistoryRef = useRef<Record<Move, number>>({ rock: 0, paper: 0, scissors: 0 });
+  const computerMoveRef  = useRef<Move | null>(null);
   const timers           = useRef<ReturnType<typeof setTimeout>[]>([]);
   const earlyMoveRef     = useRef<Move | null>(null);
 
@@ -253,16 +258,14 @@ export default function App() {
     // Only accept during "accepting" phase
     if (p !== "accepting") return;
 
-    haptic(18);
-
     // Lock immediately — no more input this round
     setPhase("locked");
     earlyMoveRef.current = null;
 
-    // Computer decides RIGHT NOW based on accumulated history
-    const strategy = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random";
-    const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
+    // Computer move might have been pre-decided in "imbalance"
+    const compMove = computerMoveRef.current || computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
     const result   = determineOutcome(move, compMove);
+    const strategy = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random";
 
     if (isDebug) {
       const inputTime = Date.now();
@@ -275,11 +278,13 @@ export default function App() {
       }));
     }
 
-    setPlayerMove(move);
     setComputerMove(compMove);
     setOutcome(result);
 
-    // Update scoreboard
+    // If bot wasn't already revealed, reveal it now (before the player's delay window)
+    setComputerRevealVisible(true);
+
+    // Update scoreboard (can happen behind the scenes)
     setScores(prev => ({
       wins:   result === "win"  ? prev.wins + 1   : prev.wins,
       ties:   result === "tie"  ? prev.ties + 1   : prev.ties,
@@ -291,24 +296,32 @@ export default function App() {
     setPlayerHistory(prev => ({ ...prev, [move]: prev[move] + 1 }));
     if (nextTotal >= CONFIG.ADAPTIVE_THRESHOLD) setAdaptiveActive(true);
 
-    // Delayed reveal + result sound
+    // THE CORE DELAY REWORK:
+    // We wait CONFIG.CALIB_DELAY_MS (135ms) before showing the player's hand
+    // and playing the sensory feedback (haptics + sound).
     schedule(() => {
+      setPlayerMove(move);
+      setPlayerRevealVisible(true);
       setRevealVisible(true);
       setPhase("reveal");
-      playResultWithDelay(result, CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
-      // Extra haptic for victory!
-      if (result === "win") schedule(() => haptic([25, 45, 35]), CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
-      else if (result === "lose") schedule(() => haptic(40), CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
-      else schedule(() => haptic([15, 15]), CONFIG.RESULT_SOUND_EXTRA_DELAY_MS);
-    }, CONFIG.REVEAL_DELAY_MS);
 
-    // Auto-return to idle / auto-restart
-    schedule(() => {
-      setRevealVisible(false);
-      setPhase("idle");
-      queueAutoRestart();
-    }, CONFIG.REVEAL_DELAY_MS + CONFIG.REVEAL_DURATION_MS);
-  }, [schedule, queueAutoRestart, haptic]);
+      // Simultaneous sound + haptic
+      playResultWithDelay(result, 0); // Delay is 0 because we've already waited the calibration delay
+      
+      if (result === "win") haptic([25, 45, 35]);
+      else if (result === "lose") haptic(40);
+      else haptic([15, 15]);
+
+      // Auto-return to idle / auto-restart after the result duration
+      schedule(() => {
+        setRevealVisible(false);
+        setPhase("idle");
+        queueAutoRestart();
+      }, CONFIG.REVEAL_DURATION_MS);
+
+    }, CONFIG.CALIB_DELAY_MS);
+
+  }, [schedule, queueAutoRestart, haptic, isDebug, debugLog.shootTime]);
 
   // Keep ref updated
   handlePlayerMoveRef.current = handlePlayerMove;
@@ -324,8 +337,11 @@ export default function App() {
     setCountdownIdx(0);
     setPlayerMove(null);
     setComputerMove(null);
+    computerMoveRef.current = null;
     setOutcome(null);
     setRevealVisible(false);
+    setComputerRevealVisible(false);
+    setPlayerRevealVisible(false);
     setMissedShot(false);
     setDisplayStep("1");
     earlyMoveRef.current = null;
@@ -352,6 +368,17 @@ export default function App() {
       playCountdownTick();
       haptic(10);
     }, step * 2);
+
+    // "Imbalance": Computer decides 300ms before "SHOOT!" with 30% probability
+    schedule(() => {
+      if (Math.random() < 0.3) {
+        const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
+        computerMoveRef.current = compMove;
+        setComputerMove(compMove);
+        setComputerRevealVisible(true);
+        playCountdownTick();
+      }
+    }, step * 3 - 300);
 
     // Early input window opens during "3" step (earlyMs before SHOOT)
     schedule(() => {
@@ -393,6 +420,8 @@ export default function App() {
           setMissedShot(true);
           setPhase("reveal");
           setRevealVisible(true);
+          setComputerRevealVisible(true);
+          setPlayerRevealVisible(true);
 
           const holdMs = CONFIG.REVEAL_DURATION_MS + CONFIG.MISS_EXTRA_HOLD_MS;
           schedule(() => {
@@ -403,7 +432,7 @@ export default function App() {
         }
       }, CONFIG.SHOOT_WINDOW_MS + CONFIG.INPUT_LATE_GRACE_MS);
     }, step * 3);
-  }, [clearAllTimers, schedule, queueAutoRestart]);
+  }, [clearAllTimers, schedule, queueAutoRestart, isDebug, haptic]);
 
   // Keep ref updated
   beginCountdownRef.current = beginCountdown;
@@ -613,6 +642,17 @@ export default function App() {
           {/* ── COUNTDOWN / ACCEPTING / LOCKED ── */}
           {showCountdown && !revealVisible && (
             <div className="flex flex-col items-center gap-3 w-full">
+              {/* Early Bot Reveal (Imbalance) */}
+              {computerRevealVisible && (
+                <div 
+                  className="absolute top-4 flex flex-col items-center animate-inkPop"
+                  style={{ animation: "inkPop 0.3s ease-out" }}
+                >
+                   <div className="text-5xl">{computerMove ? MOVE_EMOJI[computerMove] : ""}</div>
+                   <span className="text-[10px] uppercase tracking-tighter opacity-40">Ink Decided</span>
+                </div>
+              )}
+
               <div
                 key={displayStep}
                 style={{
@@ -636,11 +676,6 @@ export default function App() {
                   style={{ fontFamily: "'Caveat', cursive", color: "#5a3010" }}
                 >
                   1 · 2 · 3 … now!
-                </p>
-              )}
-              {phase === "locked" && (
-                <p className="text-sm italic" style={{ color: "#8a7a6a", animation: "inkFadeIn 0.2s ease-out" }}>
-                  deciding…
                 </p>
               )}
             </div>
@@ -669,12 +704,15 @@ export default function App() {
                   {/* Moves side by side */}
                   <div className="flex items-center gap-6 justify-center w-full">
                     {/* Player */}
-                    <div className="flex flex-col items-center gap-1">
+                    <div 
+                      className="flex flex-col items-center gap-1 transition-opacity duration-200"
+                      style={{ opacity: playerRevealVisible ? 1 : 0 }}
+                    >
                       <div
                         className="text-6xl md:text-7xl"
                         style={{
                           filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
-                          animation: "inkPop 0.3s ease-out",
+                          animation: playerRevealVisible ? "inkPop 0.3s ease-out" : "none",
                         }}
                       >
                         {playerMove ? MOVE_EMOJI[playerMove] : "❓"}
@@ -696,12 +734,15 @@ export default function App() {
                     </div>
 
                     {/* Computer */}
-                    <div className="flex flex-col items-center gap-1">
+                    <div 
+                      className="flex flex-col items-center gap-1 transition-opacity duration-200"
+                      style={{ opacity: computerRevealVisible ? 1 : 0 }}
+                    >
                       <div
                         className="text-6xl md:text-7xl"
                         style={{
                           filter: "drop-shadow(1px 3px 6px rgba(0,0,0,0.13))",
-                          animation: "inkPop 0.3s ease-out 0.1s both",
+                          animation: computerRevealVisible ? "inkPop 0.3s ease-out" : "none",
                         }}
                       >
                         {computerMove ? MOVE_EMOJI[computerMove] : "❓"}
@@ -725,7 +766,8 @@ export default function App() {
                       fontFamily: "'Caveat', cursive",
                       color: outcomeColor,
                       textShadow: "1px 2px 8px rgba(0,0,0,0.09)",
-                      animation: "inkPop 0.35s ease-out 0.2s both",
+                      animation: playerRevealVisible ? "inkPop 0.35s ease-out both" : "none",
+                      opacity: playerRevealVisible ? 1 : 0,
                     }}
                   >
                     {outcomeWord}
@@ -737,6 +779,7 @@ export default function App() {
                     style={{
                       background: `linear-gradient(90deg, transparent, ${outcomeColor}55, transparent)`,
                       transition: "background 0.5s",
+                      opacity: playerRevealVisible ? 1 : 0,
                     }}
                   />
                 </>
