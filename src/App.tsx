@@ -775,7 +775,6 @@ export default function App() {
                       >
                         {displayStep}
                       </div>
-                      )}
                     </div>
                   ) : (
                     /* THE VERSUS LAYOUT (Used for imbalance, calibration delay, and final reveal) */
