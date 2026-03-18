@@ -338,8 +338,6 @@ export default function App() {
         ? CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS
         : CONFIG.CALIB_DELAY_MS);
     
-    const earlyOffset = (Math.pow(Math.random(), 2) * (CONFIG.IMBALANCE_ADVANCE_MAX_MS + 100)) - 300;
-    
     // Bot Delay: 
     // - If it was an imbalance reveal, it's already shown (0 delay).
     // - If there is a manual override, use it.
@@ -368,7 +366,7 @@ export default function App() {
         inputTime,
         latency: shootTime ? inputTime - shootTime : null,
         playerDelay,
-        botDelay: isImbalanceReveal ? -earlyOffset : botDelay,
+        botDelay: isImbalanceReveal ? -999 : botDelay,
       }));
     }
 
@@ -455,7 +453,13 @@ export default function App() {
 
     const step    = CONFIG.STEP_DURATION_MS;
     const earlyMs = CONFIG.INPUT_EARLY_WINDOW_MS;
+    const do_imbalance_bool = Math.random() < CONFIG.IMBALANCE_PROBABILITY;
+    const imbalanceAdvanceMs = (Math.pow(Math.random(), 2) * (CONFIG.IMBALANCE_ADVANCE_MAX_MS + 100)) - 300;
 
+    if( do_imbalance_bool && isDebug ) {
+      setDebugLog( prev => ({ ...prev, botDelay: Math.round(imbalanceAdvancedMs),
+                            }));
+    }
     // Step "1" — immediate tick
     playCountdownTick();
     haptic(8);
@@ -478,14 +482,14 @@ export default function App() {
 
     // "Imbalance": Computer decides before "SHOOT!" with probability from CONFIG
     schedule(() => {
-      if (Math.random() < CONFIG.IMBALANCE_PROBABILITY) {
+      if ( do_imbalance_bool ) {
         const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
         computerMoveRef.current = compMove;
         setComputerMove(compMove);
         setComputerRevealVisible(true);
         playCountdownTick();
       }
-    }, step * 3 - earlyOffset);
+    }, step * 3 - imbalanceAdvanceMs);
 
     // Early input window opens during "3" step (earlyMs before SHOOT)
     schedule(() => {
