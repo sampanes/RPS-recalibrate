@@ -199,6 +199,10 @@ export default function App() {
   const [displayStep, setDisplayStep]       = useState<string>("");
   const [lastTouchMove, setLastTouchMove]   = useState<Move | null>(null);
 
+  // ── Debug Overrides ────────────────────────────────────────────────────────
+  const [playerDelayOverride, setPlayerDelayOverride] = useState<number | null>(null);
+  const [botDelayOverride, setBotDelayOverride]       = useState<number | null>(null);
+
   // ── Reveal States ───────────────────────────────────────────────────────────
   const [computerRevealVisible, setComputerRevealVisible] = useState(false);
   const [playerRevealVisible, setPlayerRevealVisible]     = useState(false);
@@ -309,18 +313,23 @@ export default function App() {
     const isLearned = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD;
     
     // Player Delay: 135ms standard
-    const playerDelay = (CONFIG.EXPERIMENT_MODE && isLearned)
-      ? CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS
-      : CONFIG.CALIB_DELAY_MS;
+    const playerDelay = playerDelayOverride !== null 
+      ? playerDelayOverride 
+      : ((CONFIG.EXPERIMENT_MODE && isLearned)
+        ? CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS
+        : CONFIG.CALIB_DELAY_MS);
 
     // Bot Delay: 
     // - If it was an imbalance reveal, it's already shown (0 delay).
+    // - If there is a manual override, use it.
     // - Otherwise, in illusion mode it's very fast (35ms).
-    // - In normal mode, we give it a range around 135ms (e.g. 100-180ms) 
+    // - In normal mode, we give it a range around 135ms (100-180ms) 
     //   so sometimes it shows before the player, sometimes after.
     let botDelay = 0;
     if (!isImbalanceReveal) {
-      if (CONFIG.EXPERIMENT_MODE && isLearned) {
+      if (botDelayOverride !== null) {
+        botDelay = botDelayOverride;
+      } else if (CONFIG.EXPERIMENT_MODE && isLearned) {
         botDelay = CONFIG.ILLUSION_DELAY_MS;
       } else {
         // Randomize bot delay slightly so it's not always exactly 135ms
@@ -389,7 +398,7 @@ export default function App() {
 
     }, playerDelay);
 
-  }, [schedule, queueAutoRestart, haptic, isDebug, debugLog.shootTime]);
+  }, [schedule, queueAutoRestart, haptic, isDebug, debugLog.shootTime, playerDelayOverride, botDelayOverride]);
 
   // Keep ref updated
   handlePlayerMoveRef.current = handlePlayerMove;
@@ -983,17 +992,63 @@ export default function App() {
       {/* ── Debug Overlay ── */}
       {isDebug && (
         <div 
-          className="fixed bottom-0 right-0 p-2 m-2 rounded bg-black/80 text-white text-[10px] font-mono z-[100] backdrop-blur-sm pointer-events-none border border-white/20"
+          className="fixed bottom-0 right-0 p-3 m-2 rounded bg-black/90 text-white text-[10px] font-mono z-[100] backdrop-blur-sm border border-white/20 flex flex-col gap-2 min-w-[220px]"
         >
-          <div className="flex gap-3">
-            <span>P-Delay: {debugLog.playerDelay ?? "---"}ms</span>
-            <span>C-Delay: {debugLog.botDelay ?? "---"}ms</span>
-            <span className="text-yellow-400">
-              Mode: {CONFIG.EXPERIMENT_MODE 
-                ? (totalGames >= CONFIG.ADAPTIVE_THRESHOLD ? "Gaslight" : "Calib") 
-                : "Normal"}
+          <div className="flex flex-col gap-1.5 border-b border-white/10 pb-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="w-12">Player:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max={CONFIG.CALIB_DELAY_MS + 500} 
+                value={playerDelayOverride ?? CONFIG.CALIB_DELAY_MS} 
+                onChange={(e) => setPlayerDelayOverride(Number(e.target.value))}
+                className="flex-1 accent-blue-500 h-1"
+              />
+              <button 
+                onClick={() => setPlayerDelayOverride(null)}
+                className={`px-1 rounded border ${playerDelayOverride === null ? 'bg-blue-600 border-blue-400' : 'bg-transparent border-white/20'}`}
+              >
+                Default
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="w-12">Bot:</label>
+              <input 
+                type="range" 
+                min="0" 
+                max={180 + 500} 
+                value={botDelayOverride ?? (debugLog.botDelay !== null && debugLog.botDelay >= 0 ? debugLog.botDelay : 140)} 
+                onChange={(e) => setBotDelayOverride(Number(e.target.value))}
+                className="flex-1 accent-red-500 h-1"
+              />
+              <button 
+                onClick={() => setBotDelayOverride(null)}
+                className={`px-1 rounded border ${botDelayOverride === null ? 'bg-red-600 border-red-400' : 'bg-transparent border-white/20'}`}
+              >
+                Default
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center gap-3">
+            <div className="flex gap-2">
+              <span className="text-blue-300">P:{debugLog.playerDelay ?? "---"}ms</span>
+              <span className="opacity-40">vs</span>
+              <span className="text-red-300">C:{debugLog.botDelay ?? "---"}ms</span>
+            </div>
+            <span className="text-yellow-400 font-bold">
+              {CONFIG.EXPERIMENT_MODE 
+                ? (totalGames >= CONFIG.ADAPTIVE_THRESHOLD ? "GASLIGHT" : "CALIB") 
+                : "NORMAL"}
             </span>
+          </div>
+          <div className="flex justify-between items-center opacity-80">
             <span>RT: {debugLog.latency ?? "---"}ms</span>
+            {debugLog.botDelay !== null && debugLog.botDelay < 0 && (
+              <span className="text-orange-400 animate-pulse">IMBALANCE!</span>
+            )}
+            <span>Strat: {debugLog.botStrategy}</span>
           </div>
         </div>
       )}
