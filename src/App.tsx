@@ -65,23 +65,26 @@ const MOVE_IMAGES: Record<Move, string> = {
   scissors: "/moves/scissors.png",
 };
 
-// Global cache for image availability to prevent per-render 404s
-let _imagesDetected: boolean | null = null;
+type MoveImageStatus = "loading" | "ready" | "missing";
 
-const MoveIcon: React.FC<{ move: Move; className?: string }> = ({ move, className }) => {
-  // If we've already detected images are missing, go straight to emoji
-  if (_imagesDetected === false) {
+const MoveIcon: React.FC<{
+  move: Move;
+  className?: string;
+  imageStatus: MoveImageStatus;
+}> = ({ move, className, imageStatus }) => {
+  if (imageStatus !== "ready") {
     return <div className={className}>{MOVE_EMOJI[move]}</div>;
   }
 
   return (
-    <img 
-      src={MOVE_IMAGES[move]} 
+    <img
+      src={MOVE_IMAGES[move]}
       alt={MOVE_LABEL[move]}
       className={className}
-      style={{ objectFit: 'contain' }}
-      // Fallback if this specific image fails
-      onError={(e) => (e.currentTarget.style.display = 'none')}
+      style={{ objectFit: "contain" }}
+      loading="eager"
+      decoding="sync"
+      fetchPriority="high"
     />
   );
 };
@@ -206,23 +209,39 @@ export default function App() {
   const [displayStep, setDisplayStep]       = useState<string>("");
   const [lastTouchMove, setLastTouchMove]   = useState<Move | null>(null);
   const [visualAccepting, setVisualAccepting] = useState(false);
-  const [, setForceUpdate] = useState(0); // For image detection trigger
+  const [moveImageStatus, setMoveImageStatus] = useState<MoveImageStatus>("loading");
 
   // ── Asset Detection ────────────────────────────────────────────────────────
   useEffect(() => {
-    // Check if rock image exists as a proxy for all images
-    const img = new Image();
-    img.src = MOVE_IMAGES.rock;
-    img.onload = () => {
-      _imagesDetected = true;
-      // Preload the others
-      new Image().src = MOVE_IMAGES.paper;
-      new Image().src = MOVE_IMAGES.scissors;
-      setForceUpdate(v => v + 1);
-    };
-    img.onerror = () => {
-      _imagesDetected = false;
-      setForceUpdate(v => v + 1);
+    let cancelled = false;
+
+    const preloadMoveImage = (src: string) => new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      img.decoding = "sync";
+      img.src = src;
+
+      const markReady = () => {
+        if (typeof img.decode === "function") {
+          img.decode().then(() => resolve()).catch(() => resolve());
+          return;
+        }
+        resolve();
+      };
+
+      img.onload = markReady;
+      img.onerror = () => reject(new Error(`Unable to load ${src}`));
+    });
+
+    Promise.all((Object.values(MOVE_IMAGES) as string[]).map(preloadMoveImage))
+      .then(() => {
+        if (!cancelled) setMoveImageStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setMoveImageStatus("missing");
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -316,6 +335,8 @@ export default function App() {
 
     // Lock immediately — no more input this round
     setPhase("locked");
+    setVisualAccepting(false);
+    setLastTouchMove(move);
 
     // Computer move might have been pre-decided in "imbalance"
     const isImbalanceReveal = computerMoveRef.current !== null;
@@ -329,8 +350,11 @@ export default function App() {
     const strategy = strategyOverride || (totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random");
 
     // THE CORE DELAY REWORK:
-    const isLearned = totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD;
-    
+    const isLearned = CONFIG.EXPERIMENT_MODE && (
+      strategyOverride === "adaptive" ||
+      (strategyOverride !== "random" && totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD)
+    );
+
     // Player Delay: 135ms standard
     const playerDelay = playerDelayOverride !== null 
       ? playerDelayOverride 
@@ -397,13 +421,11 @@ export default function App() {
       setPlayerMove(move);
       setPlayerRevealVisible(true);
       
-      // BUTTON FEEDBACK (Ink splash and scale)
-      setLastTouchMove(move);
-      setTimeout(() => setLastTouchMove(null), 400);
+      // BUTTON FEEDBACK settles after the instant press response
+      schedule(() => setLastTouchMove(null), 220);
 
       // ARENA FEEDBACK
       setRevealVisible(true);
-      setVisualAccepting(false);
       setPhase("reveal");
       setOutcome(result);
 
@@ -813,7 +835,7 @@ export default function App() {
                             }}
                           >
                             {playerRevealVisible && playerMove ? (
-                              <MoveIcon move={playerMove} className="w-full h-full" />
+                              <MoveIcon move={playerMove} className="w-full h-full" imageStatus={moveImageStatus} />
                             ) : (
                               <InkPlaceholder />
                             )}
@@ -864,7 +886,7 @@ export default function App() {
                             }}
                           >
                             {computerRevealVisible && computerMove ? (
-                              <MoveIcon move={computerMove} className="w-full h-full" />
+                              <MoveIcon move={computerMove} className="w-full h-full" imageStatus={moveImageStatus} />
                             ) : (
                               <InkPlaceholder />
                             )}
@@ -975,7 +997,7 @@ export default function App() {
                     transition: "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.3s",
                   }}
                 >
-                  <MoveIcon move={move} className="w-full h-full" />
+                  <MoveIcon move={move} className="w-full h-full" imageStatus={moveImageStatus} />
                 </span>
                 <span
                   className="text-xs mt-1 font-bold uppercase tracking-widest"
@@ -1009,26 +1031,35 @@ export default function App() {
 
       {/* ── Desktop key hint (below arena) ── */}
       <div
-        className="relative z-10 mt-5 text-xs italic hidden md:block text-center transition-opacity duration-300"
+        className="relative z-10 mt-5 hidden md:flex items-center justify-center gap-2 text-xs italic transition-opacity duration-300 flex-wrap"
         style={{ color: "#a09080", zIndex: 10, opacity: visualAccepting ? 1 : 0.4 }}
       >
-        keyboard:{" "}
-        {(["rock","paper","scissors"] as Move[]).map((m, i) => (
-          <span key={m}>
-            <kbd
-              className="font-mono px-1 rounded mx-0.5"
-              style={{ 
-                background: visualAccepting ? "rgba(180,165,145,0.3)" : "rgba(180,165,145,0.1)", 
-                border: "1px solid rgba(100,80,60,0.18)", 
-                borderBottomWidth: 2 
-              }}
-            >
-              {i+1}
-            </kbd>{" "}{MOVE_LABEL[m]}
-            {i < 2 ? " · " : ""}
-          </span>
+        <span>keyboard:</span>
+        {(["rock","paper","scissors"] as Move[]).map((move, i) => (
+          <React.Fragment key={move}>
+            <span className="inline-flex items-center gap-1.5">
+              <kbd
+                className="font-mono px-1 rounded mx-0.5"
+                style={{
+                  background: visualAccepting ? "rgba(180,165,145,0.3)" : "rgba(180,165,145,0.1)",
+                  border: "1px solid rgba(100,80,60,0.18)",
+                  borderBottomWidth: 2,
+                }}
+              >
+                {i + 1}
+              </kbd>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-flex items-center justify-center w-4 h-4">
+                  <MoveIcon move={move} className="w-full h-full" imageStatus={moveImageStatus} />
+                </span>
+                <span>{MOVE_LABEL[move]}</span>
+              </span>
+            </span>
+            {i < 2 && <span aria-hidden="true">·</span>}
+          </React.Fragment>
         ))}
-        &nbsp;|&nbsp;numpad works too
+        <span aria-hidden="true">|</span>
+        <span>numpad works too</span>
       </div>
 
       {/* ── Debug Overlay ── */}
