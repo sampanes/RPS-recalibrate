@@ -366,7 +366,7 @@ export default function App() {
         inputTime,
         latency: shootTime ? inputTime - shootTime : null,
         playerDelay,
-        botDelay: isImbalanceReveal ? -999 : botDelay,
+        botDelay: !isImbalanceReveal ? botDelay : null,
       }));
     }
 
