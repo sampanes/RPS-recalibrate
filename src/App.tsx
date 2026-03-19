@@ -218,7 +218,6 @@ export default function App() {
     const preloadMoveImage = (src: string) => new Promise<void>((resolve, reject) => {
       const img = new Image();
       img.decoding = "sync";
-      img.src = src;
 
       const markReady = () => {
         if (typeof img.decode === "function") {
@@ -230,6 +229,7 @@ export default function App() {
 
       img.onload = markReady;
       img.onerror = () => reject(new Error(`Unable to load ${src}`));
+      img.src = src;
     });
 
     Promise.all((Object.values(MOVE_IMAGES) as string[]).map(preloadMoveImage))
