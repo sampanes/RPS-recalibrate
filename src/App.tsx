@@ -526,6 +526,11 @@ export default function App() {
         setComputerMove(compMove);
         setComputerRevealVisible(true);
         playCountdownTick();
+        // Open input immediately — player can see the hand so they should be able to respond
+        if (phaseRef.current === "countdown") {
+          setPhase("accepting");
+          setVisualAccepting(true);
+        }
       }
     }, step * 3 - imbalanceAdvanceMs);
 
@@ -1034,7 +1039,7 @@ export default function App() {
       {/* ── Desktop key hint (below arena) ── */}
       <div
         className="relative z-10 mt-5 hidden md:flex items-center justify-center gap-2 text-xs italic transition-opacity duration-300 flex-wrap"
-        style={{ color: "#a09080", zIndex: 10, opacity: visualAccepting ? 1 : 0.4 }}
+        style={{ color: "#a09080", zIndex: 10, opacity: visualAccepting ? 1 : 0.65 }}
       >
         <span>keyboard:</span>
         {(["rock","paper","scissors"] as Move[]).map((move, i) => (
