@@ -55,14 +55,14 @@ const MOVE_LABEL: Record<Move, string> = {
   scissors: "Scissors",
 };
 
-/**
- * TODO: Add your custom images to /public/moves/ as rock.png, paper.png, scissors.png
- * The MoveIcon component will automatically detect them.
- */
+import rockImg     from "./assets/moves/rock.png";
+import paperImg    from "./assets/moves/paper.png";
+import scissorsImg from "./assets/moves/scissors.png";
+
 const MOVE_IMAGES: Record<Move, string> = {
-  rock:     "/moves/rock.png",
-  paper:    "/moves/paper.png",
-  scissors: "/moves/scissors.png",
+  rock:     rockImg,
+  paper:    paperImg,
+  scissors: scissorsImg,
 };
 
 type MoveImageStatus = "loading" | "ready" | "missing";
