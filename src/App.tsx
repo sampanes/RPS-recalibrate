@@ -3,47 +3,21 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Rock · Paper · Scissors — Ink & Wash Edition
  *
- * Smooth continuous play:
- *  • Hover arena (or tap on mobile) to start.
- *  • Countdown: 1 → 2 → 3 → SHOOT!
- *  • Input accepted from late in "3" through well after SHOOT! (forgiving).
- *  • 3 second result display, then auto-restart if cursor still in arena.
- *  • No instructions shown between rounds — just a quiet breath.
- *  • Cursor hidden inside the arena.
- *  • Mobile: giant translucent overlay buttons always visible.
- *
- * All durations are imported from config.ts.
+ * Rendering only. All game logic lives in useGameState.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-} from "react";
-import { CONFIG } from "./config";
+import React, { useState, useEffect, useRef } from "react";
 import { WatercolorCanvas } from "./components/WatercolorCanvas";
-import {
-  playCountdownTick,
-  playShootSound,
-  playResultWithDelay,
-} from "./utils/sounds";
-import {
-  computeComputerMove,
-  determineOutcome,
-  type Move,
-} from "./utils/computerAI";
+import { useGameState } from "./hooks/useGameState";
+import { type Move } from "./utils/computerAI";
+import { CONFIG } from "./config";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-type Phase =
-  | "idle"       // waiting for player to hover/click Start
-  | "countdown"  // counting 1 → 2 → 3 (before early window)
-  | "accepting"  // accepting input (early window in "3", SHOOT, late grace)
-  | "locked"     // player chose, computing result
-  | "reveal";    // showing result
+import rockImg     from "./assets/moves/rock.png";
+import paperImg    from "./assets/moves/paper.png";
+import scissorsImg from "./assets/moves/scissors.png";
 
-// ─── Static display maps ─────────────────────────────────────────────────────
+// ─── Static display maps ──────────────────────────────────────────────────────
 const MOVE_EMOJI: Record<Move, string> = {
   rock:     "🪨",
   paper:    "📄",
@@ -54,11 +28,6 @@ const MOVE_LABEL: Record<Move, string> = {
   paper:    "Paper",
   scissors: "Scissors",
 };
-
-import rockImg     from "./assets/moves/rock.png";
-import paperImg    from "./assets/moves/paper.png";
-import scissorsImg from "./assets/moves/scissors.png";
-
 const MOVE_IMAGES: Record<Move, string> = {
   rock:     rockImg,
   paper:    paperImg,
@@ -67,6 +36,7 @@ const MOVE_IMAGES: Record<Move, string> = {
 
 type MoveImageStatus = "loading" | "ready" | "missing";
 
+// ─── Components ───────────────────────────────────────────────────────────────
 const MoveIcon: React.FC<{
   move: Move;
   className?: string;
@@ -75,7 +45,6 @@ const MoveIcon: React.FC<{
   if (imageStatus !== "ready") {
     return <div className={className}>{MOVE_EMOJI[move]}</div>;
   }
-
   return (
     <img
       src={MOVE_IMAGES[move]}
@@ -95,7 +64,6 @@ const InkPlaceholder: React.FC = () => (
   </div>
 );
 
-// ─── Ink-border decoration ────────────────────────────────────────────────────
 const InkBorder: React.FC<{ outcome?: "win" | "lose" | "tie" | null; active: boolean }> = ({
   outcome,
   active,
@@ -144,7 +112,6 @@ const InkBorder: React.FC<{ outcome?: "win" | "lose" | "tie" | null; active: boo
   );
 };
 
-// ─── Score display ────────────────────────────────────────────────────────────
 const ScoreBoard: React.FC<{
   wins: number; ties: number; losses: number; total: number;
 }> = ({ wins, ties, losses, total }) => (
@@ -177,10 +144,7 @@ const ScoreBoard: React.FC<{
         </span>
       </div>
     ))}
-    <div
-      className="text-xs italic pb-1"
-      style={{ color: "#a09080" }}
-    >
+    <div className="text-xs italic pb-1" style={{ color: "#a09080" }}>
       {total} played
     </div>
   </div>
@@ -188,30 +152,45 @@ const ScoreBoard: React.FC<{
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  // ── Debug ───────────────────────────────────────────────────────────────────
   const isDebug = new URLSearchParams(window.location.search).has("debug");
 
-  // ── State ───────────────────────────────────────────────────────────────────
-  const [phase, setPhase]               = useState<Phase>("idle");
-  const [countdownIdx, setCountdownIdx] = useState(0);
-  const [playerMove, setPlayerMove]     = useState<Move | null>(null);
-  const [computerMove, setComputerMove] = useState<Move | null>(null);
-  const [outcome, setOutcome]           = useState<"win" | "lose" | "tie" | null>(null);
-  const [scores, setScores]             = useState({ wins: 0, ties: 0, losses: 0 });
-  const [totalGames, setTotalGames]     = useState(0);
-  const [playerHistory, setPlayerHistory] = useState<Record<Move, number>>({
-    rock: 0, paper: 0, scissors: 0,
-  });
-  const [revealVisible, setRevealVisible]   = useState(false);
-  const [adaptiveActive, setAdaptiveActive] = useState(false);
-  const [missedShot, setMissedShot]         = useState(false);
-  const [arenaHovered, setArenaHovered]     = useState(false);
-  const [displayStep, setDisplayStep]       = useState<string>("");
-  const [lastTouchMove, setLastTouchMove]   = useState<Move | null>(null);
-  const [visualAccepting, setVisualAccepting] = useState(false);
+  // ── UI-only state ──────────────────────────────────────────────────────────
+  const [arenaHovered, setArenaHovered] = useState(false);
   const [moveImageStatus, setMoveImageStatus] = useState<MoveImageStatus>("loading");
 
-  // ── Asset Detection ────────────────────────────────────────────────────────
+  // Ref so the hover-delay callback sees the current value without stale closure
+  const arenaHoveredRef = useRef(false);
+  arenaHoveredRef.current = arenaHovered;
+
+  // ── Game logic ─────────────────────────────────────────────────────────────
+  const {
+    phase,
+    countdownIdx,
+    displayStep,
+    visualAccepting,
+    missedShot,
+    adaptiveActive,
+    playerMove,
+    computerMove,
+    outcome,
+    revealVisible,
+    computerRevealVisible,
+    playerRevealVisible,
+    lastTouchMove,
+    scores,
+    totalGames,
+    beginCountdown,
+    handlePlayerMove,
+    debugLog,
+    playerDelayOverride,
+    botDelayOverride,
+    strategyOverride,
+    setPlayerDelayOverride,
+    setBotDelayOverride,
+    setStrategyOverride,
+  } = useGameState({ arenaHovered, isDebug });
+
+  // ── Image preload ──────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -242,370 +221,12 @@ export default function App() {
         if (!cancelled) setMoveImageStatus("missing");
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // ── Debug Overrides ────────────────────────────────────────────────────────
-  const [playerDelayOverride, setPlayerDelayOverride] = useState<number | null>(null);
-  const [botDelayOverride, setBotDelayOverride]       = useState<number | null>(null);
-  const [strategyOverride, setStrategyOverride]       = useState<"random" | "adaptive" | null>(null);
-
-  // ── Reveal States ───────────────────────────────────────────────────────────
-  const [computerRevealVisible, setComputerRevealVisible] = useState(false);
-  const [playerRevealVisible, setPlayerRevealVisible]     = useState(false);
-
-  // ── Debug State ─────────────────────────────────────────────────────────────
-  const [debugLog, setDebugLog] = useState<{
-    botStrategy: "random" | "adaptive";
-    shootTime: number | null;
-    inputTime: number | null;
-    latency: number | null;
-    playerDelay: number | null;
-    botDelay: number | null;
-  }>({
-    botStrategy: "random",
-    shootTime: null,
-    inputTime: null,
-    latency: null,
-    playerDelay: null,
-    botDelay: null,
-  });
-
-  // ── Haptic feedback helper ───────────────────────────────────────────────
-  const haptic = useCallback((pattern: number | number[]) => {
-    if (typeof navigator !== "undefined" && navigator.vibrate) {
-      navigator.vibrate(pattern);
-    }
-  }, []);
-
-  // ── Refs ────────────────────────────────────────────────────────────────────
-  // Refs mirror state for use inside timeout closures (avoids stale captures)
-  const phaseRef         = useRef<Phase>("idle");
-  const arenaHoveredRef  = useRef(false);
-  const totalGamesRef    = useRef(0);
-  const playerHistoryRef = useRef<Record<Move, number>>({ rock: 0, paper: 0, scissors: 0 });
-  const computerMoveRef  = useRef<Move | null>(null);
-  const timers           = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const earlyMoveRef     = useRef<Move | null>(null);
-
-  // Keep refs in sync
-  phaseRef.current         = phase;
-  arenaHoveredRef.current  = arenaHovered;
-  totalGamesRef.current    = totalGames;
-  playerHistoryRef.current = playerHistory;
-
-  // ── Stable function refs (solve circular dependency) ────────────────────────
-  // We use refs to hold the latest version of functions so they can call
-  // each other without stale closures or circular useCallback deps.
-  const handlePlayerMoveRef = useRef<(m: Move) => void>(() => {});
-  const beginCountdownRef   = useRef<() => void>(() => {});
-
-  // ── Timer management ────────────────────────────────────────────────────────
-  const clearAllTimers = useCallback(() => {
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-  }, []);
-
-  const schedule = useCallback((fn: () => void, delay: number) => {
-    const id = setTimeout(fn, delay);
-    timers.current.push(id);
-    return id;
-  }, []);
-
-  // ── queueAutoRestart ────────────────────────────────────────────────────────
-  // After a reveal finishes, if cursor is still in arena, auto-start next round.
-  const queueAutoRestart = useCallback(() => {
-    if (arenaHoveredRef.current) {
-      schedule(() => {
-        if (arenaHoveredRef.current && phaseRef.current === "idle") {
-          beginCountdownRef.current();
-        }
-      }, CONFIG.AUTO_RESTART_DELAY_MS);
-    }
-  }, [schedule]);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // handlePlayerMove
-  // ─────────────────────────────────────────────────────────────────────────────
-  const handlePlayerMove = useCallback((move: Move) => {
-    const p = phaseRef.current;
-
-    // Only accept during "accepting" phase
-    if (p !== "accepting") return;
-
-    // Lock immediately — no more input this round
-    setPhase("locked");
-    setVisualAccepting(false);
-    setLastTouchMove(move);
-
-    // Computer move might have been pre-decided in "imbalance"
-    const isImbalanceReveal = computerMoveRef.current !== null;
-    const compMove = computerMoveRef.current || computeComputerMove(
-      totalGamesRef.current, 
-      playerHistoryRef.current,
-      move,
-      strategyOverride
-    );
-    const result   = determineOutcome(move, compMove);
-    const strategy = strategyOverride || (totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD ? "adaptive" : "random");
-
-    // THE CORE DELAY REWORK:
-    const isLearned = CONFIG.EXPERIMENT_MODE && (
-      strategyOverride === "adaptive" ||
-      (strategyOverride !== "random" && totalGamesRef.current >= CONFIG.ADAPTIVE_THRESHOLD)
-    );
-
-    // Player Delay: 135ms standard
-    const playerDelay = playerDelayOverride !== null 
-      ? playerDelayOverride 
-      : ((CONFIG.EXPERIMENT_MODE && isLearned)
-        ? CONFIG.ILLUSION_PLAYER_MOVE_DELAY_MS
-        : CONFIG.CALIB_DELAY_MS);
-    
-    // Bot Delay: 
-    // - If it was an imbalance reveal, it's already shown (0 delay).
-    // - If there is a manual override, use it.
-    // - Otherwise, in illusion mode it's very fast (0ms).
-    // - In normal mode, we give it a range around 135ms (100-180ms) 
-    //   so sometimes it shows before the player, sometimes after.
-    let botDelay = 0;
-    if (!isImbalanceReveal) {
-      if (botDelayOverride !== null) {
-        botDelay = botDelayOverride;
-      } else if (CONFIG.EXPERIMENT_MODE && isLearned) {
-        botDelay = CONFIG.ILLUSION_DELAY_MS;
-      } else {
-        // Randomize bot delay slightly so it's not always exactly 135ms
-        // This allows the player to sometimes "show first"
-        botDelay = Math.round(100 + Math.random() * 80);
-      }
-    }
-
-    if (isDebug) {
-      const inputTime = Date.now();
-      const shootTime = debugLog.shootTime;
-      if( !isImbalanceReveal ) {
-        setDebugLog(prev => ({
-          ...prev,
-          botStrategy: strategy,
-          inputTime,
-          latency: shootTime ? inputTime - shootTime : null,
-          playerDelay,
-          botDelay: botDelay,
-        }));
-      } else {
-        setDebugLog(prev => ({
-          ...prev,
-          botStrategy: strategy,
-          inputTime,
-          latency: shootTime ? inputTime - shootTime : null,
-          playerDelay,
-        }));
-      }
-    }
-
-    setComputerMove(compMove);
-
-    // Schedule Bot Reveal
-    if (!isImbalanceReveal && botDelay > 0) {
-      schedule(() => {
-        setComputerRevealVisible(true);
-      }, botDelay);
-    } else {
-      setComputerRevealVisible(true);
-    }
-
-    // Schedule Player Reveal + ALL sensory consequences (sound, haptic, visuals, scores)
-    schedule(() => {
-      // VISUAL CHOICE FEEDBACK
-      setPlayerMove(move);
-      setPlayerRevealVisible(true);
-      
-      // BUTTON FEEDBACK settles after the instant press response
-      schedule(() => setLastTouchMove(null), 220);
-
-      // ARENA FEEDBACK
-      setRevealVisible(true);
-      setPhase("reveal");
-      setOutcome(result);
-
-      // SCOREBOARD FEEDBACK
-      setScores(prev => ({
-        wins:   result === "win"  ? prev.wins + 1   : prev.wins,
-        ties:   result === "tie"  ? prev.ties + 1   : prev.ties,
-        losses: result === "lose" ? prev.losses + 1 : prev.losses,
-      }));
-
-      const nextTotal = totalGamesRef.current + 1;
-      setTotalGames(nextTotal);
-      setPlayerHistory(prev => ({ ...prev, [move]: prev[move] + 1 }));
-      if (nextTotal >= CONFIG.ADAPTIVE_THRESHOLD) setAdaptiveActive(true);
-
-      // AUDIO / HAPTIC FEEDBACK
-      playResultWithDelay(result, 0); 
-      
-      if (result === "win") haptic([25, 45, 35]);
-      else if (result === "lose") haptic(40);
-      else haptic([15, 15]);
-
-      // Auto-return to idle / auto-restart after the result duration
-      schedule(() => {
-        setRevealVisible(false);
-        setPhase("idle");
-        queueAutoRestart();
-      }, CONFIG.REVEAL_DURATION_MS);
-
-    }, playerDelay);
-
-  }, [schedule, queueAutoRestart, haptic, isDebug, debugLog.shootTime, playerDelayOverride, botDelayOverride, strategyOverride]);
-
-  // Keep ref updated
-  handlePlayerMoveRef.current = handlePlayerMove;
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // beginCountdown
-  // ─────────────────────────────────────────────────────────────────────────────
-  const beginCountdown = useCallback(() => {
-    if (phaseRef.current !== "idle") return;
-
-    clearAllTimers();
-    setPhase("countdown");
-    setCountdownIdx(0);
-    setPlayerMove(null);
-    setComputerMove(null);
-    computerMoveRef.current = null;
-    setOutcome(null);
-    setRevealVisible(false);
-    setComputerRevealVisible(false);
-    setPlayerRevealVisible(false);
-    setVisualAccepting(false);
-    setMissedShot(false);
-    setDisplayStep("1");
-    earlyMoveRef.current = null;
-
-    const step    = CONFIG.STEP_DURATION_MS;
-    const earlyMs = CONFIG.INPUT_EARLY_WINDOW_MS;
-    const do_imbalance_bool = Math.random() < CONFIG.IMBALANCE_PROBABILITY;
-    // Total span is (Earliest + Latest)
-    const span = CONFIG.IMBALANCE_EARLIEST_MS + CONFIG.IMBALANCE_LATEST_MS;
-    // This flips the bias so the bot leans toward LATEST
-    const bias = 1 - Math.pow(Math.random(), 2);
-    const imbalanceAdvanceMs = (bias * span) - CONFIG.IMBALANCE_EARLIEST_MS;
-
-    if( do_imbalance_bool && isDebug ) {
-      setDebugLog( prev => ({ ...prev, botDelay: Math.round(imbalanceAdvanceMs),
-                            }));
-    }
-    // Step "1" — immediate tick
-    playCountdownTick();
-    haptic(8);
-
-    // Step "2"
-    schedule(() => {
-      setCountdownIdx(1);
-      setDisplayStep("2");
-      playCountdownTick();
-      haptic(8);
-    }, step);
-
-    // Step "3"
-    schedule(() => {
-      setCountdownIdx(2);
-      setDisplayStep("3");
-      playCountdownTick();
-      haptic(10);
-    }, step * 2);
-
-    // "Imbalance": Computer decides before "SHOOT!" with probability from CONFIG
-    schedule(() => {
-      if ( do_imbalance_bool ) {
-        const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
-        computerMoveRef.current = compMove;
-        setComputerMove(compMove);
-        setComputerRevealVisible(true);
-        playCountdownTick();
-        // Open input immediately — player can see the hand so they should be able to respond
-        if (phaseRef.current === "countdown") {
-          setPhase("accepting");
-          setVisualAccepting(true);
-        }
-      }
-    }, step * 3 - imbalanceAdvanceMs);
-
-    // Early input window opens during "3" step (earlyMs before SHOOT)
-    schedule(() => {
-      if (phaseRef.current === "countdown") {
-        setPhase("accepting");
-        setVisualAccepting(true);
-      }
-    }, step * 3 - earlyMs);
-
-    // "SHOOT!" fires
-    schedule(() => {
-      setCountdownIdx(3);
-      setDisplayStep("SHOOT!");
-      playShootSound();
-      haptic(25);
-
-      if (isDebug) {
-        setDebugLog(prev => ({ ...prev, shootTime: Date.now(), inputTime: null, latency: null }));
-      }
-
-      // Ensure accepting phase (unless already locked by early input)
-      if (phaseRef.current !== "locked") {
-        setPhase("accepting");
-        setVisualAccepting(true);
-      }
-
-      // Miss timeout: SHOOT_WINDOW_MS + late grace
-      schedule(() => {
-        if (phaseRef.current === "accepting") {
-          setMissedShot(true);
-          setPhase("reveal");
-          setVisualAccepting(false);
-          setRevealVisible(true);
-          setComputerRevealVisible(true);
-          setPlayerRevealVisible(true);
-
-          const holdMs = CONFIG.REVEAL_DURATION_MS + CONFIG.MISS_EXTRA_HOLD_MS;
-          schedule(() => {
-            setRevealVisible(false);
-            setPhase("idle");
-            queueAutoRestart();
-          }, holdMs);
-        }
-      }, CONFIG.SHOOT_WINDOW_MS + CONFIG.INPUT_LATE_GRACE_MS);
-    }, step * 3);
-  }, [clearAllTimers, schedule, queueAutoRestart, isDebug, haptic]);
-
-  // Keep ref updated
-  beginCountdownRef.current = beginCountdown;
-
-  // ── Keyboard listener ────────────────────────────────────────────────────────
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Move keys: number row or numpad
-      if (e.code === "Digit1" || e.code === "Numpad1") handlePlayerMoveRef.current("rock");
-      if (e.code === "Digit2" || e.code === "Numpad2") handlePlayerMoveRef.current("paper");
-      if (e.code === "Digit3" || e.code === "Numpad3") handlePlayerMoveRef.current("scissors");
-      // Start keys: space / enter when idle
-      if ((e.code === "Space" || e.code === "Enter") && phaseRef.current === "idle") {
-        beginCountdownRef.current();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => () => clearAllTimers(), [clearAllTimers]);
-
-  // ── Derived values ───────────────────────────────────────────────────────────
+  // ── Derived display values ─────────────────────────────────────────────────
   const isShoot       = countdownIdx === 3;
   const showCountdown = phase === "countdown" || phase === "accepting" || phase === "locked";
-  const isAccepting   = phase === "accepting";
 
   const outcomeColor =
     outcome === "win"  ? "#3a7a3a" :
@@ -616,14 +237,10 @@ export default function App() {
     outcome === "lose" ? "Defeat."    :
     outcome === "tie"  ? "Draw."      : "Missed!";
 
-  // Show start button + instructions only when idle and cursor NOT in arena
-  const showStartButton = phase === "idle" && !revealVisible && !arenaHovered;
-
-  // Remaining games until adaptive AI
-  const adaptiveCountdown =
-    totalGames < CONFIG.ADAPTIVE_THRESHOLD
-      ? CONFIG.ADAPTIVE_THRESHOLD - totalGames
-      : 0;
+  const showStartButton    = phase === "idle" && !revealVisible && !arenaHovered;
+  const adaptiveCountdown  = totalGames < CONFIG.ADAPTIVE_THRESHOLD
+    ? CONFIG.ADAPTIVE_THRESHOLD - totalGames
+    : 0;
 
   // ─────────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -693,17 +310,11 @@ export default function App() {
         }}
         onMouseEnter={() => {
           setArenaHovered(true);
-          if (phaseRef.current === "idle") {
-            schedule(() => {
-              if (arenaHoveredRef.current && phaseRef.current === "idle") {
-                beginCountdownRef.current();
-              }
-            }, 80);
-          }
+          setTimeout(() => {
+            if (arenaHoveredRef.current) beginCountdown();
+          }, 80);
         }}
-        onMouseLeave={() => {
-          setArenaHovered(false);
-        }}
+        onMouseLeave={() => setArenaHovered(false)}
       >
         <InkBorder outcome={outcome} active={arenaHovered} />
 
@@ -727,7 +338,7 @@ export default function App() {
                   letterSpacing: "0.08em",
                   boxShadow: "0 2px 14px rgba(80,55,35,0.12), inset 0 1px 0 rgba(255,250,240,0.4)",
                 }}
-                onClick={() => beginCountdownRef.current()}
+                onClick={() => beginCountdown()}
               >
                 <span style={{ position: "relative", zIndex: 1 }}>▶ Start</span>
               </button>
@@ -765,7 +376,7 @@ export default function App() {
             </div>
           )}
 
-          {/* ── IDLE inside arena: quiet breathing dots (no instructions) ── */}
+          {/* ── IDLE inside arena: quiet breathing dots ── */}
           {phase === "idle" && !revealVisible && arenaHovered && (
             <div
               className="flex flex-col items-center gap-3"
@@ -785,9 +396,9 @@ export default function App() {
             </div>
           )}
 
-          {/* ── ACTIVE GAME (Countdown, Accepting, Locked, or Reveal) ── */}
+          {/* ── ACTIVE GAME ── */}
           {(showCountdown || revealVisible) && (
-            <div 
+            <div
               className="flex flex-col items-center gap-5 w-full"
               style={{ animation: "inkFadeIn 0.4s ease-out" }}
             >
@@ -805,7 +416,6 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  {/* If no reveal has happened at all (standard 1, 2, 3), show centered countdown */}
                   {(!computerRevealVisible && !playerRevealVisible) ? (
                     <div className="flex flex-col items-center gap-3 w-full">
                       <div
@@ -826,11 +436,10 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    /* THE VERSUS LAYOUT (Used for imbalance, calibration delay, and final reveal) */
                     <div className="flex flex-col items-center gap-5 w-full">
                       <div className="flex items-center gap-6 justify-center w-full">
                         {/* Player Side */}
-                        <div 
+                        <div
                           className="flex flex-col items-center gap-1 transition-all duration-300"
                           style={{ opacity: playerRevealVisible ? 1 : 0.35, transform: playerRevealVisible ? "scale(1)" : "scale(0.95)" }}
                         >
@@ -859,18 +468,18 @@ export default function App() {
                         </div>
 
                         {/* Middle: Countdown OR "vs" */}
-                        <div 
+                        <div
                           className="flex flex-col items-center justify-center min-w-[80px]"
                           style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, color: "#a09080" }}
                         >
                           {showCountdown ? (
-                            <div 
+                            <div
                               key={displayStep}
                               className="text-4xl md:text-5xl"
-                              style={{ 
+                              style={{
                                 animation: "inkPop 0.22s cubic-bezier(.2,1.6,.4,1)",
                                 color: isShoot ? "#7a2e10" : "#a09080",
-                                textShadow: isShoot ? "0 0 20px rgba(200,70,20,0.15)" : "none"
+                                textShadow: isShoot ? "0 0 20px rgba(200,70,20,0.15)" : "none",
                               }}
                             >
                               {displayStep}
@@ -881,7 +490,7 @@ export default function App() {
                         </div>
 
                         {/* Computer Side */}
-                        <div 
+                        <div
                           className="flex flex-col items-center gap-1 transition-all duration-300"
                           style={{ opacity: computerRevealVisible ? 1 : 0.35, transform: computerRevealVisible ? "scale(1)" : "scale(0.95)" }}
                         >
@@ -910,7 +519,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Outcome (only when sensory revealed) */}
+                      {/* Outcome */}
                       {playerRevealVisible && (
                         <div className="flex flex-col items-center gap-2 w-full">
                           <div
@@ -941,17 +550,16 @@ export default function App() {
           )}
         </div>
 
-        {/* ── Mobile overlay buttons (Fantastic Version) ── */}
+        {/* ── Mobile overlay buttons ── */}
         <div
           className="absolute inset-x-0 bottom-0 flex justify-around items-end pb-10 px-4 md:hidden pointer-events-none"
           style={{ zIndex: 30 }}
         >
           {(["rock", "paper", "scissors"] as Move[]).map((move, i) => {
-            const accepting = visualAccepting;
+            const accepting    = visualAccepting;
             const isLastPressed = lastTouchMove === move;
-            const isHidden = phase === "idle" || phase === "reveal";
-            
-            // Generate a unique organic shape for each button
+            const isHidden     = phase === "idle" || phase === "reveal";
+
             const radii = [
               "60% 40% 30% 70% / 60% 30% 70% 40%",
               "40% 60% 70% 30% / 40% 50% 60% 50%",
@@ -963,14 +571,14 @@ export default function App() {
                 key={move}
                 onTouchStart={(e) => {
                   e.preventDefault();
-                  const p = phaseRef.current;
-                  if (p === "accepting") handlePlayerMoveRef.current(move);
-                  else if (p === "idle") beginCountdownRef.current();
+                  const p = phase;
+                  if (p === "accepting") handlePlayerMove(move);
+                  else if (p === "idle") beginCountdown();
                 }}
                 onClick={() => {
-                  const p = phaseRef.current;
-                  if (p === "accepting") handlePlayerMoveRef.current(move);
-                  else if (p === "idle") beginCountdownRef.current();
+                  const p = phase;
+                  if (p === "accepting") handlePlayerMove(move);
+                  else if (p === "idle") beginCountdown();
                 }}
                 className={`
                   relative pointer-events-auto flex flex-col items-center justify-center
@@ -982,7 +590,7 @@ export default function App() {
                   background: accepting ? "rgba(255, 252, 248, 0.92)" : "rgba(255, 252, 248, 0.25)",
                   border: accepting ? "1px solid rgba(100, 80, 60, 0.2)" : "1px solid rgba(100, 80, 60, 0.1)",
                   borderRadius: radii,
-                  boxShadow: accepting 
+                  boxShadow: accepting
                     ? "0 8px 25px rgba(0,0,0,0.12), inset 0 0 15px rgba(100,80,60,0.08)"
                     : "0 2px 6px rgba(0,0,0,0.04)",
                   backdropFilter: "blur(6px)",
@@ -991,11 +599,9 @@ export default function App() {
                   transition: "opacity 0.4s, transform 0.2s, background 0.3s, visibility 0.4s, border-radius 0.5s",
                 }}
               >
-                {/* Ink splash effect on press */}
                 {isLastPressed && (
                   <div className="absolute inset-0 animate-ping opacity-30" style={{ background: "#8a7a6a", borderRadius: radii }} />
                 )}
-                
                 <span
                   className="text-4xl sm:text-5xl flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16"
                   style={{
@@ -1012,13 +618,11 @@ export default function App() {
                     fontFamily: "'Caveat', cursive",
                     color: accepting ? "#3a2a18" : "#a09080",
                     opacity: accepting ? 1 : 0.5,
-                    fontSize: '0.65rem'
+                    fontSize: '0.65rem',
                   }}
                 >
                   {MOVE_LABEL[move]}
                 </span>
-
-                {/* Decorative ink ring */}
                 <svg className="absolute inset-0 w-full h-full -rotate-12 pointer-events-none" viewBox="0 0 100 100">
                   <path
                     d="M20,50 C20,20 80,20 80,50 C80,80 20,80 20,50"
@@ -1036,7 +640,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── Desktop key hint (below arena) ── */}
+      {/* ── Desktop key hint ── */}
       <div
         className="relative z-10 mt-5 hidden md:flex items-center justify-center gap-2 text-xs italic transition-opacity duration-300 flex-wrap"
         style={{ color: "#a09080", zIndex: 10, opacity: visualAccepting ? 1 : 0.65 }}
@@ -1071,21 +675,19 @@ export default function App() {
 
       {/* ── Debug Overlay ── */}
       {isDebug && (
-        <div 
-          className="fixed bottom-0 right-0 p-3 m-2 rounded bg-black/90 text-white text-[10px] font-mono z-[100] backdrop-blur-sm border border-white/20 flex flex-col gap-2 min-w-[220px]"
-        >
+        <div className="fixed bottom-0 right-0 p-3 m-2 rounded bg-black/90 text-white text-[10px] font-mono z-[100] backdrop-blur-sm border border-white/20 flex flex-col gap-2 min-w-[220px]">
           <div className="flex flex-col gap-1.5 border-b border-white/10 pb-2">
             <div className="flex items-center justify-between gap-2">
               <label className="w-12">Player:</label>
-              <input 
-                type="range" 
-                min="0" 
-                max={CONFIG.CALIB_DELAY_MS + 500} 
-                value={playerDelayOverride ?? CONFIG.CALIB_DELAY_MS} 
+              <input
+                type="range"
+                min="0"
+                max={CONFIG.CALIB_DELAY_MS + 500}
+                value={playerDelayOverride ?? CONFIG.CALIB_DELAY_MS}
                 onChange={(e) => setPlayerDelayOverride(Number(e.target.value))}
                 className="flex-1 accent-blue-500 h-1"
               />
-              <button 
+              <button
                 onClick={() => setPlayerDelayOverride(null)}
                 className={`px-1 rounded border ${playerDelayOverride === null ? 'bg-blue-600 border-blue-400' : 'bg-transparent border-white/20'}`}
               >
@@ -1094,15 +696,15 @@ export default function App() {
             </div>
             <div className="flex items-center justify-between gap-2">
               <label className="w-12">Bot:</label>
-              <input 
-                type="range" 
-                min="0" 
-                max={180 + 500} 
-                value={botDelayOverride ?? (debugLog.botDelay !== null && debugLog.botDelay >= 0 ? debugLog.botDelay : 140)} 
+              <input
+                type="range"
+                min="0"
+                max={180 + 500}
+                value={botDelayOverride ?? (debugLog.botDelay !== null && debugLog.botDelay >= 0 ? debugLog.botDelay : 140)}
                 onChange={(e) => setBotDelayOverride(Number(e.target.value))}
                 className="flex-1 accent-red-500 h-1"
               />
-              <button 
+              <button
                 onClick={() => setBotDelayOverride(null)}
                 className={`px-1 rounded border ${botDelayOverride === null ? 'bg-red-600 border-red-400' : 'bg-transparent border-white/20'}`}
               >
@@ -1112,7 +714,7 @@ export default function App() {
             <div className="flex items-center justify-between gap-2">
               <label className="w-12">Strat:</label>
               <div className="flex-1 flex gap-1">
-                <button 
+                <button
                   onClick={() => {
                     if (strategyOverride === null) setStrategyOverride("random");
                     else if (strategyOverride === "random") setStrategyOverride("adaptive");
@@ -1122,7 +724,7 @@ export default function App() {
                 >
                   Cycle: {strategyOverride === null ? 'Default' : (strategyOverride === 'random' ? 'Random' : 'Adaptive')}
                 </button>
-                <button 
+                <button
                   onClick={() => setStrategyOverride(null)}
                   className={`px-1 rounded border ${strategyOverride === null ? 'bg-purple-600 border-purple-400' : 'bg-transparent border-white/20'}`}
                 >
@@ -1139,8 +741,8 @@ export default function App() {
               <span className="text-red-300">C:{debugLog.botDelay ?? "---"}ms</span>
             </div>
             <span className="text-yellow-400 font-bold">
-              {CONFIG.EXPERIMENT_MODE 
-                ? (totalGames >= CONFIG.ADAPTIVE_THRESHOLD ? "GASLIGHT" : "CALIB") 
+              {CONFIG.EXPERIMENT_MODE
+                ? (totalGames >= CONFIG.ADAPTIVE_THRESHOLD ? "GASLIGHT" : "CALIB")
                 : "NORMAL"}
             </span>
           </div>
