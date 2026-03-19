@@ -27,6 +27,13 @@ export type Move = "rock" | "paper" | "scissors";
 // Re-export threshold so the UI can reference it without importing config directly
 export const ADAPTIVE_THRESHOLD = CONFIG.ADAPTIVE_THRESHOLD;
 
+/** Subset of CONFIG values that affect AI behaviour — pass overrides for simulation sweeps. */
+export interface AIConfig {
+  ADAPTIVE_THRESHOLD: number;
+  ADAPTIVE_NOISE: number;
+  ADAPTIVE_WIN_RATE: number;
+}
+
 /** The move that beats each move. */
 const BEATS: Record<Move, Move> = {
   rock:     "paper",
@@ -57,9 +64,9 @@ function randomMove(): Move {
  *                 Does NOT include the current round's move.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-function adaptiveMove(history: Record<Move, number>): Move {
-  // Noise injection — go random CONFIG.ADAPTIVE_NOISE % of the time
-  if (Math.random() < CONFIG.ADAPTIVE_NOISE) {
+function adaptiveMove(history: Record<Move, number>, noise: number): Move {
+  // Noise injection — go random noise % of the time
+  if (Math.random() < noise) {
     return randomMove();
   }
 
@@ -103,19 +110,20 @@ export function computeComputerMove(
   totalGamesPlayed: number,
   playerHistory: Record<Move, number>,
   playerCurrentMove?: Move,
-  strategyOverride?: "random" | "adaptive" | null
+  strategyOverride?: "random" | "adaptive" | null,
+  config: AIConfig = CONFIG
 ): Move {
   // Use manual override if provided
   if (strategyOverride === "random") return randomMove();
-  if (strategyOverride === "adaptive") return adaptiveMove(playerHistory);
+  if (strategyOverride === "adaptive") return adaptiveMove(playerHistory, config.ADAPTIVE_NOISE);
 
   // Otherwise, use default logic based on threshold
-  if (totalGamesPlayed >= CONFIG.ADAPTIVE_THRESHOLD) {
+  if (totalGamesPlayed >= config.ADAPTIVE_THRESHOLD) {
     // If we're in a phase where we should "always" win (and we know the player move)
-    if (playerCurrentMove && Math.random() < CONFIG.ADAPTIVE_WIN_RATE) {
+    if (playerCurrentMove && Math.random() < config.ADAPTIVE_WIN_RATE) {
       return getWinningMove(playerCurrentMove);
     }
-    return adaptiveMove(playerHistory);
+    return adaptiveMove(playerHistory, config.ADAPTIVE_NOISE);
   }
   return randomMove();
 }
