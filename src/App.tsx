@@ -464,7 +464,11 @@ export default function App() {
     const step    = CONFIG.STEP_DURATION_MS;
     const earlyMs = CONFIG.INPUT_EARLY_WINDOW_MS;
     const do_imbalance_bool = Math.random() < CONFIG.IMBALANCE_PROBABILITY;
-    const imbalanceAdvanceMs = (Math.pow(Math.random(), 2) * (CONFIG.IMBALANCE_ADVANCE_MAX_MS + 100)) - 300;
+    // Total span is (Earliest + Latest)
+    const span = CONFIG.IMBALANCE_EARLIEST_MS + CONFIG.IMBALANCE_LATEST_MS;
+    // Calculate the value
+    const imbalanceAdvanceMs = (Math.pow(Math.random(), 2) * span) - CONFIG.IMBALANCE_EARLIEST_MS;
+
 
     if( do_imbalance_bool && isDebug ) {
       setDebugLog( prev => ({ ...prev, botDelay: Math.round(imbalanceAdvanceMs),
