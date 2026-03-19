@@ -466,9 +466,9 @@ export default function App() {
     const do_imbalance_bool = Math.random() < CONFIG.IMBALANCE_PROBABILITY;
     // Total span is (Earliest + Latest)
     const span = CONFIG.IMBALANCE_EARLIEST_MS + CONFIG.IMBALANCE_LATEST_MS;
-    // Calculate the value
-    const imbalanceAdvanceMs = (Math.pow(Math.random(), 2) * span) - CONFIG.IMBALANCE_EARLIEST_MS;
-
+    // This flips the bias so the bot leans toward LATEST
+    const bias = 1 - Math.pow(Math.random(), 2);
+    const imbalanceAdvanceMs = (bias * span) - CONFIG.IMBALANCE_EARLIEST_MS;
 
     if( do_imbalance_bool && isDebug ) {
       setDebugLog( prev => ({ ...prev, botDelay: Math.round(imbalanceAdvanceMs),
