@@ -227,16 +227,18 @@ export default function App() {
         resolve();
       };
 
-      img.onload = markReady;
-      img.onerror = () => reject(new Error(`Unable to load ${src}`));
+      img.onload = () => { console.log(`[images] loaded: ${src}`); markReady(); };
+      img.onerror = () => { console.error(`[images] failed: ${src}`); reject(new Error(`Unable to load ${src}`)); };
       img.src = src;
     });
 
     Promise.all((Object.values(MOVE_IMAGES) as string[]).map(preloadMoveImage))
       .then(() => {
+        console.log("[images] all ready → status: ready");
         if (!cancelled) setMoveImageStatus("ready");
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("[images] preload failed → status: missing", err);
         if (!cancelled) setMoveImageStatus("missing");
       });
 
