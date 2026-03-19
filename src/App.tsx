@@ -457,7 +457,7 @@ export default function App() {
     const imbalanceAdvanceMs = (Math.pow(Math.random(), 2) * (CONFIG.IMBALANCE_ADVANCE_MAX_MS + 100)) - 300;
 
     if( do_imbalance_bool && isDebug ) {
-      setDebugLog( prev => ({ ...prev, botDelay: Math.round(imbalanceAdvancedMs),
+      setDebugLog( prev => ({ ...prev, botDelay: Math.round(imbalanceAdvanceMs),
                             }));
     }
     // Step "1" — immediate tick
