@@ -54,10 +54,13 @@ export const CONFIG = {
 
   // ── Imbalance (Pre-decision) ───────────────────────────────────────────────
   /** Probability (0–1) that the bot decides its move before "SHOOT!" */
-  IMBALANCE_PROBABILITY: 0.3,
+  IMBALANCE_PROBABILITY: 0.4,
 
-  /** How many ms BEFORE "SHOOT!" the early decision occurs */
-  IMBALANCE_ADVANCE_MAX_MS: 300,
+  /** The furthest possible time BEFORE "SHOOT!" an early decision can happen */
+  IMBALANCE_EARLIEST_MS: 500,
+  
+  /** The latest possible time AFTER "SHOOT!" an early decision can happen */
+  IMBALANCE_LATEST_MS: 200,
 
   // ── AI ─────────────────────────────────────────────────────────────────────
   /** Number of completed games before adaptive strategy activates */
