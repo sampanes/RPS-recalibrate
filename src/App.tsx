@@ -360,14 +360,24 @@ export default function App() {
     if (isDebug) {
       const inputTime = Date.now();
       const shootTime = debugLog.shootTime;
-      setDebugLog(prev => ({
-        ...prev,
-        botStrategy: strategy,
-        inputTime,
-        latency: shootTime ? inputTime - shootTime : null,
-        playerDelay,
-        botDelay: !isImbalanceReveal ? botDelay : null,
-      }));
+      if( !isImbalanceReveal ) {
+        setDebugLog(prev => ({
+          ...prev,
+          botStrategy: strategy,
+          inputTime,
+          latency: shootTime ? inputTime - shootTime : null,
+          playerDelay,
+          botDelay: botDelay,
+        }));
+      } else {
+        setDebugLog(prev => ({
+          ...prev,
+          botStrategy: strategy,
+          inputTime,
+          latency: shootTime ? inputTime - shootTime : null,
+          playerDelay,
+        }));
+      }
     }
 
     setComputerMove(compMove);
