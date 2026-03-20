@@ -294,7 +294,7 @@ export function useGameState({
     const do_imbalance_bool = Math.random() < CONFIG.IMBALANCE_PROBABILITY;
     const span = CONFIG.IMBALANCE_EARLIEST_MS + CONFIG.IMBALANCE_LATEST_MS;
     const bias = 1 - Math.pow(Math.random(), 2);
-    const imbalanceAdvanceMs = (bias * span) - CONFIG.IMBALANCE_EARLIEST_MS;
+    const imbalanceAdvanceMs = (bias * span) - CONFIG.IMBALANCE_LATEST_MS;
 
     if (do_imbalance_bool && isDebug) {
       setDebugLog(prev => ({ ...prev, botDelay: Math.round(imbalanceAdvanceMs) }));
