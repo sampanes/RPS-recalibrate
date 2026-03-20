@@ -54,7 +54,7 @@ export const CONFIG = {
 
   // ── Imbalance (Pre-decision) ───────────────────────────────────────────────
   /** Probability (0–1) that the bot decides its move before "SHOOT!" */
-  IMBALANCE_PROBABILITY: 0.4,
+  IMBALANCE_PROBABILITY: 0.55,
 
   /** The furthest possible time BEFORE "SHOOT!" an early decision can happen */
   IMBALANCE_EARLIEST_MS: 200,
@@ -67,14 +67,14 @@ export const CONFIG = {
   ADAPTIVE_THRESHOLD: 20,
 
   /** Probability (0–1) that the adaptive AI ignores history and goes random */
-  ADAPTIVE_NOISE: 0.2,
+  ADAPTIVE_NOISE: 0.15,
 
-  /** 
-   * Probability (0–1) that the bot "cheats" by looking at your current move 
-   * once ADAPTIVE_THRESHOLD is reached. This enables the "always winning" 
+  /**
+   * Probability (0–1) that the bot "cheats" by looking at your current move
+   * once ADAPTIVE_THRESHOLD is reached. This enables the "always winning"
    * illusion for the experiment.
    */
-  ADAPTIVE_WIN_RATE: 0.9,
+  ADAPTIVE_WIN_RATE: 0.65,
 
   // ── Experiment: Calibration Engine ──────────────────────────────────────────
   /**

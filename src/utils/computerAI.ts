@@ -32,6 +32,7 @@ export interface AIConfig {
   ADAPTIVE_THRESHOLD: number;
   ADAPTIVE_NOISE: number;
   ADAPTIVE_WIN_RATE: number;
+  IMBALANCE_PROBABILITY: number;
 }
 
 /** The move that beats each move. */

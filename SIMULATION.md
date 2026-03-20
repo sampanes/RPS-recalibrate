@@ -48,8 +48,8 @@ Interesting variables to sweep:
 |---|---|
 | `ADAPTIVE_THRESHOLD` | Is 20 games the right crossover? Does it feel too soon / too late? |
 | `ADAPTIVE_NOISE` | At 20% noise, does the bot feel beatable? Does 40% feel fair? |
-| `ADAPTIVE_WIN_RATE` | How crushing is the adaptive phase? 90% feels oppressive — what's fun? |
-| `IMBALANCE_PROBABILITY` | How often should the bot show its hand early? |
+| `ADAPTIVE_WIN_RATE` | How often does the bot cheat by reading your current move vs using history? 0 = pure history-based, 1 = always cheats |
+| `IMBALANCE_PROBABILITY` | How often does the bot commit before you pick? Pair with `perfect` strategy to see how much it helps an observant player |
 
 ## Output format
 

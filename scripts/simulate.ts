@@ -110,7 +110,7 @@ function runSimulation(
     // "fire-at-will" players always get null — they don't wait to see.
     const showsHandEarly =
       strategyKey !== "fire-at-will" &&
-      Math.random() < CONFIG.IMBALANCE_PROBABILITY;
+      Math.random() < config.IMBALANCE_PROBABILITY;
 
     const earlyReveal: Move | null = showsHandEarly
       ? computeComputerMove(i, { ...history }, undefined, null, config)
@@ -268,7 +268,7 @@ function main() {
 
   if (sweepVar) {
     // ── Config sweep mode ──────────────────────────────────────────────────
-    const validKeys: (keyof AIConfig)[] = ["ADAPTIVE_THRESHOLD", "ADAPTIVE_NOISE", "ADAPTIVE_WIN_RATE"];
+    const validKeys: (keyof AIConfig)[] = ["ADAPTIVE_THRESHOLD", "ADAPTIVE_NOISE", "ADAPTIVE_WIN_RATE", "IMBALANCE_PROBABILITY"];
     if (!validKeys.includes(sweepVar as keyof AIConfig)) {
       console.error(`Unknown sweep variable: ${sweepVar}. Valid: ${validKeys.join(", ")}`);
       process.exit(1);
