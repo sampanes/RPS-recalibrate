@@ -81,8 +81,13 @@ See `SIMULATION.md` for full documentation.
 Unit and hook tests use [Vitest](https://vitest.dev/). Tests live in `src/__tests__/`.
 
 ```bash
-npx vitest          # watch mode
-npx vitest run      # single run
+npm test            # single run (pass/fail)
+npm run test:watch  # watch mode — re-runs on file save
 ```
 
-See `TESTING.md` for what to test and example test cases.
+| File | What it covers |
+|---|---|
+| `src/__tests__/computerAI.test.ts` | All 9 `determineOutcome` combos, adaptive countering, cheat mode, strategy overrides |
+| `src/__tests__/useGameState.test.tsx` | Phase state machine, input handling, miss detection, scoring |
+
+See `TESTING.md` for the full testing plan and rationale.
