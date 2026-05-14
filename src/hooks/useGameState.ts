@@ -227,6 +227,7 @@ export function useGameState({
     }
 
     setComputerMove(compMove);
+    computerMoveRef.current = compMove;
 
     if (!isImbalanceReveal && botDelay > 0) {
       schedule(() => setComputerRevealVisible(true), botDelay);
@@ -322,19 +323,23 @@ export function useGameState({
     }, step * 2);
 
     schedule(() => {
-      if (do_imbalance_bool) {
-        const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
-        computerMoveRef.current = compMove;
-        setComputerMove(compMove);
-        setComputerRevealVisible(true);
-        // Only play a tick if we throw BEFORE the final "SHOOT!" step
-        if (imbalanceAdvanceMs > 0) {
-          playCountdownTick();
-        }
-        if (phaseRef.current === "countdown") {
-          setPhase("accepting");
-          setVisualAccepting(true);
-        }
+      if (!do_imbalance_bool) return;
+      // Skip if the player has already pressed — overwriting computerMove here
+      // would visibly swap the ink's hand mid-reveal.
+      const p = phaseRef.current;
+      if (p !== "countdown" && p !== "accepting") return;
+
+      const compMove = computeComputerMove(totalGamesRef.current, playerHistoryRef.current);
+      computerMoveRef.current = compMove;
+      setComputerMove(compMove);
+      setComputerRevealVisible(true);
+      // Only play a tick if we throw BEFORE the final "SHOOT!" step
+      if (imbalanceAdvanceMs > 0) {
+        playCountdownTick();
+      }
+      if (phaseRef.current === "countdown") {
+        setPhase("accepting");
+        setVisualAccepting(true);
       }
     }, step * 3 - imbalanceAdvanceMs);
 
