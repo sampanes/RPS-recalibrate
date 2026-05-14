@@ -33,6 +33,7 @@ export interface AIConfig {
   ADAPTIVE_NOISE: number;
   ADAPTIVE_WIN_RATE: number;
   IMBALANCE_PROBABILITY: number;
+  EARLY_WIN_BIAS: number;
 }
 
 /** The move that beats each move. */
@@ -40,6 +41,13 @@ const BEATS: Record<Move, Move> = {
   rock:     "paper",
   paper:    "scissors",
   scissors: "rock",
+};
+
+/** The move each move beats — i.e. throw this and the player wins against you. */
+const LOSES_TO: Record<Move, Move> = {
+  rock:     "scissors",
+  paper:    "rock",
+  scissors: "paper",
 };
 
 const ALL_MOVES: Move[] = ["rock", "paper", "scissors"];
@@ -125,6 +133,13 @@ export function computeComputerMove(
       return getWinningMove(playerCurrentMove);
     }
     return adaptiveMove(playerHistory, config.ADAPTIVE_NOISE);
+  }
+
+  // Early-game honeymoon: occasionally pick the losing move so the player wins.
+  // Only applies when we know the player's current move (i.e. not an imbalance
+  // pre-decision, where the bot commits before the player picks).
+  if (playerCurrentMove && Math.random() < config.EARLY_WIN_BIAS) {
+    return LOSES_TO[playerCurrentMove];
   }
   return randomMove();
 }

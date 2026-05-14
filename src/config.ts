@@ -76,6 +76,15 @@ export const CONFIG = {
    */
   ADAPTIVE_WIN_RATE: 0.65,
 
+  /**
+   * Probability (0–1) that, during the early random phase (games < ADAPTIVE_THRESHOLD),
+   * the bot deliberately throws the losing move to let the player win.
+   * Only fires on non-imbalance rounds (when the bot knows the player's move).
+   * A small value (~0.15) gives the player a gentle positive onramp without
+   * making the random phase feel rigged.
+   */
+  EARLY_WIN_BIAS: 0.15,
+
   // ── Experiment: Calibration Engine ──────────────────────────────────────────
   /**
    * Master toggle. When true, the game runs the PSS-recalibration protocol

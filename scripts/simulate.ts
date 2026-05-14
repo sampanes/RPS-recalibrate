@@ -268,7 +268,7 @@ function main() {
 
   if (sweepVar) {
     // ── Config sweep mode ──────────────────────────────────────────────────
-    const validKeys: (keyof AIConfig)[] = ["ADAPTIVE_THRESHOLD", "ADAPTIVE_NOISE", "ADAPTIVE_WIN_RATE", "IMBALANCE_PROBABILITY"];
+    const validKeys: (keyof AIConfig)[] = ["ADAPTIVE_THRESHOLD", "ADAPTIVE_NOISE", "ADAPTIVE_WIN_RATE", "IMBALANCE_PROBABILITY", "EARLY_WIN_BIAS"];
     if (!validKeys.includes(sweepVar as keyof AIConfig)) {
       console.error(`Unknown sweep variable: ${sweepVar}. Valid: ${validKeys.join(", ")}`);
       process.exit(1);
