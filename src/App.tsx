@@ -206,18 +206,16 @@ export default function App() {
         resolve();
       };
 
-      img.onload = () => { console.log(`[images] loaded: ${src}`); markReady(); };
-      img.onerror = () => { console.error(`[images] failed: ${src}`); reject(new Error(`Unable to load ${src}`)); };
+      img.onload = () => { markReady(); };
+      img.onerror = () => { reject(new Error("Unable to load move image")); };
       img.src = src;
     });
 
     Promise.all((Object.values(MOVE_IMAGES) as string[]).map(preloadMoveImage))
       .then(() => {
-        console.log("[images] all ready → status: ready");
         if (!cancelled) setMoveImageStatus("ready");
       })
-      .catch((err) => {
-        console.error("[images] preload failed → status: missing", err);
+      .catch(() => {
         if (!cancelled) setMoveImageStatus("missing");
       });
 
@@ -434,6 +432,12 @@ export default function App() {
                       >
                         {displayStep}
                       </div>
+                      <p
+                        className="hidden md:block text-xs italic transition-opacity duration-300"
+                        style={{ color: "#9a8a7a", opacity: isShoot ? 0 : 0.7 }}
+                      >
+                        hold… wait for SHOOT!
+                      </p>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-5 w-full">
