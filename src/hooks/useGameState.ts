@@ -293,8 +293,12 @@ export function useGameState({
     const earlyMs = CONFIG.INPUT_EARLY_WINDOW_MS;
     const do_imbalance_bool = Math.random() < CONFIG.IMBALANCE_PROBABILITY;
     const span = CONFIG.IMBALANCE_EARLIEST_MS + CONFIG.IMBALANCE_LATEST_MS;
-    const bias = 1 - Math.pow(Math.random(), 2);
-    const imbalanceAdvanceMs = (bias * span) - CONFIG.IMBALANCE_LATEST_MS;
+    
+    // Irwin-Hall distribution (n=3) peaking in the center of the total window
+    // Center is (span/2 - latest) = (2000/2 - 1800) = -800ms (halfway into SHOOT! window)
+    // Pre-shoot (positive value) probability is ~1.3% when span=2000 and latest=1800
+    const r = (Math.random() + Math.random() + Math.random()) / 3;
+    const imbalanceAdvanceMs = (r * span) - CONFIG.IMBALANCE_LATEST_MS;
 
     if (do_imbalance_bool && isDebug) {
       setDebugLog(prev => ({ ...prev, botDelay: Math.round(imbalanceAdvanceMs) }));
@@ -323,7 +327,10 @@ export function useGameState({
         computerMoveRef.current = compMove;
         setComputerMove(compMove);
         setComputerRevealVisible(true);
-        playCountdownTick();
+        // Only play a tick if we throw BEFORE the final "SHOOT!" step
+        if (imbalanceAdvanceMs > 0) {
+          playCountdownTick();
+        }
         if (phaseRef.current === "countdown") {
           setPhase("accepting");
           setVisualAccepting(true);

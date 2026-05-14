@@ -60,7 +60,7 @@ export const CONFIG = {
   IMBALANCE_EARLIEST_MS: 200,
   
   /** The latest possible time AFTER "SHOOT!" an early decision can happen */
-  IMBALANCE_LATEST_MS: 400,
+  IMBALANCE_LATEST_MS: 1800,
 
   // ── AI ─────────────────────────────────────────────────────────────────────
   /** Number of completed games before adaptive strategy activates */

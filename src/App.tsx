@@ -441,7 +441,11 @@ export default function App() {
                         {/* Player Side */}
                         <div
                           className="flex flex-col items-center gap-1 transition-all duration-300"
-                          style={{ opacity: playerRevealVisible ? 1 : 0.35, transform: playerRevealVisible ? "scale(1)" : "scale(0.95)" }}
+                          style={{ 
+                            opacity: playerRevealVisible ? 1 : 0, 
+                            transform: playerRevealVisible ? "scale(1)" : "scale(0.95)",
+                            pointerEvents: "none" 
+                          }}
                         >
                           <div
                             className="text-6xl md:text-7xl flex items-center justify-center w-20 h-20 md:w-24 md:h-24"
@@ -462,7 +466,10 @@ export default function App() {
                           >
                             {playerRevealVisible && playerMove ? MOVE_LABEL[playerMove] : ""}
                           </span>
-                          <span className="text-xs uppercase tracking-widest" style={{ color: "#9a8a78" }}>
+                          <span 
+                            className="text-xs uppercase tracking-widest transition-opacity duration-300" 
+                            style={{ color: "#9a8a78", opacity: playerRevealVisible ? 1 : 0 }}
+                          >
                             You
                           </span>
                         </div>
